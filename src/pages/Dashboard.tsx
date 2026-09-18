@@ -33,7 +33,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [loading, setLoading] = useState(true);
 
   const currentShift = getCurrentShift();
-  const today = new Date().toISOString().split('T')[0];
+  // Local date, with the same "yesterday" rule as New Monitoring: hours 00:00-07:00 are
+  // still part of the Shift 3 night session that started at 23:00, whose rounds are
+  // stored under yesterday's monitoring_date — so "today" here must match that.
+  const today = (() => {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    if (now.getHours() < 7) local.setDate(local.getDate() - 1);
+    return local.toISOString().split('T')[0];
+  })();
 
   useEffect(() => {
     async function loadData() {

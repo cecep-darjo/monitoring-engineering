@@ -53,9 +53,17 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
   const initialShiftRound = getCurrentShiftAndRound();
   const [shiftNumber, setShiftNumber] = useState(initialShiftRound.shift);
   const [roundNumber, setRoundNumber] = useState(initialShiftRound.round);
-  const [monitoringDate, setMonitoringDate] = useState(
-    new Date().toISOString().split('T')[0]
-  );
+  const [monitoringDate, setMonitoringDate] = useState(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    // Early-morning hours (00:00-07:00) during Shift 3 belong to the shift that started
+    // the previous evening at 23:00 — same "yesterday" rule as isCurrentShiftOpen() above.
+    if (initialShiftRound.shift === 3 && hour < 12) {
+      local.setDate(local.getDate() - 1);
+    }
+    return local.toISOString().split('T')[0];
+  });
   const [generalNotes, setGeneralNotes] = useState('');
   const [params, setParams] = useState<ParamWithValue[]>([]);
   const [previousValues, setPreviousValues] = useState<Record<string, number>>({});
@@ -152,15 +160,24 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     const window = ROUND_WINDOWS[shiftNumber]?.[roundNumber];
     if (!window) return false;
 
-    if (window.start < window.end) {
-      // Same-day window, e.g. 07-11, 11-15, 15-19, 19-23, 03-07
-      return monitoringDate === localToday && hour >= window.start && hour < window.end;
+    // Shift 3 (23:00-07:00) spans midnight, so BOTH of its rounds belong to the day the
+    // shift started — Round 1's tail (00-03) and all of Round 2 (03-07) are "yesterday"
+    // relative to the clock, even though Round 2's own window (3 < 7) looks like a normal
+    // same-day window at a glance.
+    if (shiftNumber === 3) {
+      if (window.start < window.end) {
+        // Round 2: 03:00-07:00, always the early-morning continuation of last night's shift.
+        return monitoringDate === yesterday && hour >= window.start && hour < window.end;
+      }
+      // Round 1: 23:00-03:00, actually crosses the midnight boundary.
+      return (
+        (monitoringDate === localToday && hour >= window.start) ||
+        (monitoringDate === yesterday && hour < window.end)
+      );
     }
-    // Wraps past midnight, e.g. shift 3 round 1: 23-03
-    return (
-      (monitoringDate === localToday && hour >= window.start) ||
-      (monitoringDate === yesterday && hour < window.end)
-    );
+
+    // Shifts 1 and 2 never cross midnight — plain same-day window.
+    return monitoringDate === localToday && hour >= window.start && hour < window.end;
   }
 
   async function loadScheduleParams(machineId: string, shift: number, round: number) {

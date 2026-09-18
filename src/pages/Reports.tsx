@@ -26,7 +26,15 @@ export default function Reports() {
   const { profile } = useAuth();
   const [machines, setMachines] = useState<Machine[]>([]);
   const [selectedMachine, setSelectedMachine] = useState<string>('all');
-  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reportDate, setReportDate] = useState(() => {
+    // Same "yesterday" rule as Dashboard/New Monitoring: before 07:00 the just-finished
+    // night shift's rounds are still stored under yesterday's monitoring_date, so default
+    // here to whichever date a full-day report would actually need right now.
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    if (now.getHours() < 7) local.setDate(local.getDate() - 1);
+    return local.toISOString().split('T')[0];
+  });
   const [shiftFilter, setShiftFilter] = useState<string>('all');
   const [rounds, setRounds] = useState<MonitoringRound[]>([]);
   const [loading, setLoading] = useState(false);
