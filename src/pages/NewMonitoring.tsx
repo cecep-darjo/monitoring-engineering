@@ -74,6 +74,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
   const [editingRoundId, setEditingRoundId] = useState<string | null>(null);
   const [deletedPhotos, setDeletedPhotos] = useState<{ id: string; storage_path: string }[]>([]);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [adminOverride, setAdminOverride] = useState(false);
 
   useEffect(() => {
     loadScheduledMachines();
@@ -142,6 +143,12 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       .eq('monitoring_date', monitoringDate);
 
     const doneRounds = (existing || []).map((r) => r.round_number);
+    if (adminOverride) {
+      // Admin explicitly picked a date/shift/round via the override picker — respect
+      // it exactly instead of auto-suggesting the "next" round to do.
+      await loadScheduleParams(machine.id, shiftNumber, roundNumber);
+      return;
+    }
     let suggestedRound = 1;
     if (!doneRounds.includes(1)) suggestedRound = 1;
     else if (!doneRounds.includes(2)) suggestedRound = 2;
@@ -178,6 +185,12 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
 
     // Shifts 1 and 2 never cross midnight — plain same-day window.
     return monitoringDate === localToday && hour >= window.start && hour < window.end;
+  }
+
+  // Admins can edit any entry at any time — the time-window lock below is only meant
+  // to stop technicians from entering data outside their actual shift.
+  function canEditNow() {
+    return isCurrentShiftOpen() || profile?.role === 'admin';
   }
 
   async function loadScheduleParams(machineId: string, shift: number, round: number) {
@@ -350,7 +363,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     setError(null);
 
     try {
-      if (!isCurrentShiftOpen()) throw new Error(`Waktu entry untuk Round ${roundNumber} (${getRoundWindowLabel(shiftNumber, roundNumber)}) sudah berakhir atau belum dimulai. Data terkunci.`);
+      if (!canEditNow()) throw new Error(`Waktu entry untuk Round ${roundNumber} (${getRoundWindowLabel(shiftNumber, roundNumber)}) sudah berakhir atau belum dimulai. Data terkunci.`);
 
       // Remove any existing photos the technician deleted while editing this round.
       for (const dp of deletedPhotos) {
@@ -487,10 +500,57 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       {/* Machine Selection */}
       {!selectedMachine ? (
         <div className="space-y-4">
+          {profile?.role === 'admin' && (
+            <div className="card p-4">
+              <button
+                onClick={() => setAdminOverride((v) => !v)}
+                className="flex items-center gap-2 text-sm font-medium text-amber-700"
+              >
+                🔓 Admin: {adminOverride ? 'Sembunyikan' : 'Edit tanggal/shift/round lain'}
+              </button>
+              {adminOverride && (
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  <div>
+                    <label className="label-text">Tanggal</label>
+                    <input
+                      type="date"
+                      value={monitoringDate}
+                      onChange={(e) => setMonitoringDate(e.target.value)}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="label-text">Shift</label>
+                    <select
+                      value={shiftNumber}
+                      onChange={(e) => setShiftNumber(Number(e.target.value))}
+                      className="input-field"
+                    >
+                      <option value={1}>Shift 1</option>
+                      <option value={2}>Shift 2</option>
+                      <option value={3}>Shift 3</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-text">Round</label>
+                    <select
+                      value={roundNumber}
+                      onChange={(e) => setRoundNumber(Number(e.target.value))}
+                      className="input-field"
+                    >
+                      <option value={1}>Round 1</option>
+                      <option value={2}>Round 2</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="card p-5">
             <label className="label-text">Select Machine to Monitor</label>
             <p className="text-xs text-slate-400 mt-1">
               Menampilkan mesin yang terjadwal untuk {SHIFT_LABELS[shiftNumber]} Round {roundNumber} ({getRoundWindowLabel(shiftNumber, roundNumber)})
+              {adminOverride && ` · Tanggal: ${monitoringDate}`}
             </p>
             <div className="space-y-2 mt-3">
               {machines.map((machine) => {
@@ -591,7 +651,12 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
               </div>
             </div>
             {editingRoundId && <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-700">Round {roundNumber} sudah dilakukan. Anda sedang mengedit data yang sama.</div>}
-            {!isCurrentShiftOpen() && (
+            {!isCurrentShiftOpen() && profile?.role === 'admin' && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
+                🔓 Round {roundNumber} ({getRoundWindowLabel(shiftNumber, roundNumber)}) di luar jam normal — kamu tetap bisa entry/edit karena login sebagai Admin.
+              </div>
+            )}
+            {!canEditNow() && (
               <div className="rounded-lg bg-slate-100 border border-slate-300 px-3 py-2 text-sm text-slate-600">
                 🔒 Round {roundNumber} hanya bisa diisi pukul {getRoundWindowLabel(shiftNumber, roundNumber)}. Saat ini di luar jam tersebut, data terkunci.
               </div>
@@ -608,7 +673,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
             </div>
           ) : (
             <div className="space-y-4">
-              <fieldset disabled={!isCurrentShiftOpen()} className="space-y-4 disabled:opacity-60">
+              <fieldset disabled={!canEditNow()} className="space-y-4 disabled:opacity-60">
               {params.map((p, idx) => {
                 const active = isParamActive(p);
                 if (!active) {
@@ -818,7 +883,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
               <div className="flex gap-3">
                 <button
                   onClick={handleSubmit}
-                  disabled={saving || params.length === 0 || !isCurrentShiftOpen()}
+                  disabled={saving || params.length === 0 || !canEditNow()}
                   className="btn-primary flex-1"
                 >
                   {saving ? (
