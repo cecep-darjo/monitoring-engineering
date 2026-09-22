@@ -422,8 +422,8 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       setSuccess(true);
       setDeletedPhotos([]);
       await refreshEnteredMachines();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to save monitoring data';
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : (err?.message || err?.hint || 'Failed to save monitoring data');
       setError(msg);
     } finally {
       setSaving(false);
