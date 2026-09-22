@@ -27,7 +27,7 @@ const ALL_SLOTS = [
 const STATUS_COLOR: Record<string, [number, number, number]> = {
   normal: [5, 150, 105], warning: [217, 119, 6], abnormal: [220, 38, 38],
 };
-const NA_FILL: [number, number, number] = [100, 100, 100];
+
 
 function runAutoTable(doc: any, options: any) {
   if (typeof autoTable === "function") {
@@ -52,10 +52,34 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(chunks.join(''));
 }
 
+// Simple timing helper so a future CPU/resource-limit failure shows exactly which
+// phase was slow, instead of a bare "CPU Time exceeded" with no breakdown.
+function time(label: string): () => void {
+  const start = performance.now();
+  return () => console.log(`[timing] ${label}: ${(performance.now() - start).toFixed(0)}ms`);
+}
+
+// Runs async tasks with a concurrency cap, so many photo downloads overlap instead of
+// running one at a time (which was the main source of the report taking so long).
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+const MAX_PHOTOS_PER_SECTION = 20; // bounds worst-case CPU/time as photo volume grows
+
 function slotLabel(shift: number, round: number): string {
   const wnd = ROUND_WINDOWS[shift][round];
-  const time = `${String(wnd.start).padStart(2, "0")}.00`;
-  return `${time}\n(${SHIFT_LABELS[shift].toUpperCase()} R${round})`;
+  const timeLabel = `${String(wnd.start).padStart(2, "0")}.00`;
+  return `${timeLabel}\n(${SHIFT_LABELS[shift].toUpperCase()} R${round})`;
 }
 function keteranganFor(type?: string): string {
   return type === "boolean" || type === "option" ? "Cek" : "Catat";
@@ -81,6 +105,8 @@ async function buildReportPdf(
   supabaseAdmin: ReturnType<typeof createClient>,
   targetDate: string
 ): Promise<Uint8Array | null> {
+  const totalTimer = time("buildReportPdf total");
+  let stepTimer = time("fetch-rounds-values-photos-parameters");
   const { data: rounds } = await supabaseAdmin
     .from("monitoring_rounds")
     .select("*")
@@ -90,14 +116,17 @@ async function buildReportPdf(
   if (!rounds || rounds.length === 0) return null;
 
   const roundIds = rounds.map((r: any) => r.id);
-  const [{ data: values }, { data: photos }, { data: parameters }] = await Promise.all([
+  const [{ data: values }, { data: photos }, { data: parameters }, { data: schedules }] = await Promise.all([
     supabaseAdmin.from("monitoring_values").select("*").in("round_id", roundIds),
     supabaseAdmin.from("monitoring_photos").select("*").in("round_id", roundIds),
     supabaseAdmin.from("parameters").select("*"),
+    supabaseAdmin.from("schedules").select("machine_id, shift_number, round_number").eq("is_active", true),
   ]);
   const valuesArr = values || [];
   const photosArr = photos || [];
   const paramById = new Map((parameters || []).map((p: any) => [p.id, p]));
+  const scheduledSlots = new Set((schedules || []).map((s: any) => `${s.machine_id}|${s.shift_number}|${s.round_number}`));
+  stepTimer();
 
   const doc = new jsPDF("l", "mm", "a4");
   const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight(), m = 8;
@@ -143,6 +172,7 @@ async function buildReportPdf(
     }
   }
 
+  stepTimer = time("build-machine-tables");
   for (const machineName of machineOrder) {
     const machineId = machineIdByName.get(machineName)!;
     const paramOrder: string[] = [];
@@ -170,9 +200,18 @@ async function buildReportPdf(
     const techRow = ["Teknisi Monitoring", "-", "-"];
     const techRowStatus: string[] = [];
     for (const slot of ALL_SLOTS) {
-      const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
-      techRow.push(round ? round.technician_name : "N/A");
-      techRowStatus.push(round ? "meta" : "na");
+      const key = `${machineId}|${slot.shift}|${slot.round}`;
+      const round = roundBySlot.get(key);
+      if (round) {
+        techRow.push(round.technician_name);
+        techRowStatus.push("meta");
+      } else if (scheduledSlots.has(key)) {
+        techRow.push("Tidak Dilakukan");
+        techRowStatus.push("missed");
+      } else {
+        techRow.push("N/A");
+        techRowStatus.push("na");
+      }
     }
     techRow.push("");
     body.push(techRow);
@@ -185,12 +224,16 @@ async function buildReportPdf(
       const rowStatus: string[] = [];
       const notesSet = new Set<string>();
       for (const slot of ALL_SLOTS) {
-        const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
+        const key = `${machineId}|${slot.shift}|${slot.round}`;
+        const round = roundBySlot.get(key);
         const val = round ? (valuesByRoundId.get(round.id) || []).find((v: any) => v.parameter_id === paramId) : undefined;
         if (val) {
           row.push(val.value && val.value.trim() ? val.value : "\u2014");
           rowStatus.push(val.status);
           if (val.notes && val.notes.trim()) notesSet.add(val.notes.trim());
+        } else if (scheduledSlots.has(key)) {
+          row.push("Tidak Dilakukan");
+          rowStatus.push("missed");
         } else {
           row.push("N/A");
           rowStatus.push("na");
@@ -215,7 +258,9 @@ async function buildReportPdf(
         if (c.section === "body" && c.column.index >= slotStart && c.column.index < slotStart + ALL_SLOTS.length) {
           const status = statusGrid[c.row.index][c.column.index - slotStart];
           if (status === "na") {
-            c.cell.styles.fillColor = NA_FILL; c.cell.styles.textColor = 255; c.cell.styles.fontStyle = "italic";
+            c.cell.styles.fillColor = [241, 245, 249]; c.cell.styles.textColor = [148, 163, 184]; c.cell.styles.fontStyle = "italic";
+          } else if (status === "missed") {
+            c.cell.styles.fillColor = [254, 243, 199]; c.cell.styles.textColor = [180, 83, 9]; c.cell.styles.fontStyle = "bold";
           } else if (status === "meta") {
             c.cell.styles.fillColor = [234, 244, 252]; c.cell.styles.textColor = [12, 58, 89]; c.cell.styles.fontStyle = "bold";
           } else if (STATUS_COLOR[status]) {
@@ -230,6 +275,7 @@ async function buildReportPdf(
     });
     cursorY = (doc as any).lastAutoTable.finalY + 5;
   }
+  stepTimer();
 
   if (photosArr.length) {
     doc.addPage(); drawHeader(); cursorY = 27;
@@ -241,9 +287,14 @@ async function buildReportPdf(
     const thumbW = 40, thumbH = 30, gap = 4;
     let x = m, rowMaxH = 0;
 
-    for (const photo of photosArr) {
-      const round: any = roundInfoById.get(photo.round_id);
-      const param: any = photo.parameter_id ? paramById.get(photo.parameter_id) : undefined;
+    const photosToRender = photosArr.slice(0, MAX_PHOTOS_PER_SECTION);
+    const skippedCount = photosArr.length - photosToRender.length;
+
+    // Download + base64-encode every photo concurrently (bounded) instead of one at a
+    // time — this was the single biggest contributor to the function running long.
+    stepTimer = time(`download-lampiran-photos (${photosToRender.length})`);
+    const dataUrlByPhotoId = new Map<string, string | null>();
+    await mapWithConcurrency(photosToRender, 6, async (photo: any) => {
       let dataUrl: string | null = null;
       try {
         const { data: fileBlob } = await supabaseAdmin.storage.from(STORAGE_BUCKET).download(photo.storage_path);
@@ -255,6 +306,15 @@ async function buildReportPdf(
           dataUrl = `data:${mime};base64,${b64}`;
         }
       } catch { /* skip missing photo */ }
+      dataUrlByPhotoId.set(photo.id, dataUrl);
+    });
+    stepTimer();
+
+    stepTimer = time("draw-lampiran-photos");
+    for (const photo of photosToRender) {
+      const round: any = roundInfoById.get(photo.round_id);
+      const param: any = photo.parameter_id ? paramById.get(photo.parameter_id) : undefined;
+      const dataUrl = dataUrlByPhotoId.get(photo.id) ?? null;
 
       const caption = [round?.machine_name, round ? `Shift ${round.shift_number} R${round.round_number}` : "", param?.name || ""].filter(Boolean).join(" \u2022 ");
       const capLines = doc.splitTextToSize(caption, thumbW);
@@ -282,9 +342,15 @@ async function buildReportPdf(
       rowMaxH = Math.max(rowMaxH, blockH);
       x += thumbW + gap;
     }
+    if (skippedCount > 0) {
+      doc.setFontSize(6.5); doc.setTextColor(150);
+      doc.text(`+${skippedCount} foto lainnya tidak ditampilkan (lihat di aplikasi).`, m, cursorY + rowMaxH + 4);
+    }
+    stepTimer();
   }
 
   // ---- Titipan Pekerjaan: always the very last section of the report ----
+  stepTimer = time("fetch-work-requests");
   const dayStartUtc = new Date(`${targetDate}T00:00:00+07:00`).toISOString();
   const dayEndUtc = new Date(new Date(`${targetDate}T00:00:00+07:00`).getTime() + 24 * 60 * 60 * 1000).toISOString();
   const { data: workRequests } = await supabaseAdmin
@@ -293,6 +359,7 @@ async function buildReportPdf(
     .gte("created_at", dayStartUtc)
     .lt("created_at", dayEndUtc)
     .order("created_at");
+  stepTimer();
 
   if (workRequests && workRequests.length) {
     const wrIds = workRequests.map((wr: any) => wr.id);
@@ -305,19 +372,40 @@ async function buildReportPdf(
       photosByRequest.get(p.work_request_id)!.push(p);
     }
 
+    // Prefetch every work-request photo concurrently (bounded, capped) up front, same
+    // reasoning as the LAMPIRAN FOTO section above.
+    const allWrPhotos = (wrPhotos || []).slice(0, MAX_PHOTOS_PER_SECTION);
+    stepTimer = time(`download-titipan-photos (${allWrPhotos.length})`);
+    const wrDataUrlByPhotoId = new Map<string, string | null>();
+    await mapWithConcurrency(allWrPhotos, 6, async (photo: any) => {
+      let dataUrl: string | null = null;
+      try {
+        const { data: fileBlob } = await supabaseAdmin.storage.from(STORAGE_BUCKET).download(photo.storage_path);
+        if (fileBlob) {
+          const buf = new Uint8Array(await fileBlob.arrayBuffer());
+          const ext = (photo.storage_path.split(".").pop() || "jpg").toLowerCase();
+          const mime = ext === "png" ? "image/png" : "image/jpeg";
+          dataUrl = `data:${mime};base64,${bytesToBase64(buf)}`;
+        }
+      } catch { /* skip missing photo */ }
+      wrDataUrlByPhotoId.set(photo.id, dataUrl);
+    });
+    stepTimer();
+
+    stepTimer = time("draw-titipan-pekerjaan");
     doc.addPage(); drawHeader(); cursorY = 27;
     doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(18, 79, 121);
     doc.text("TITIPAN PEKERJAAN", m, cursorY);
     cursorY += 7;
 
     for (const wr of workRequests) {
-      const time = new Date(wr.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+      const timeLabel = new Date(wr.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
       ensureSpace(16);
       doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 23, 42);
       doc.text(wr.title, m, cursorY);
       cursorY += 4;
       doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(100, 116, 139);
-      doc.text(`Diminta oleh: ${wr.requested_by}   |   Teknisi: ${wr.technician_name}   |   Jam: ${time}`, m, cursorY);
+      doc.text(`Diminta oleh: ${wr.requested_by}   |   Teknisi: ${wr.technician_name}   |   Jam: ${timeLabel}`, m, cursorY);
       cursorY += 4;
 
       doc.setFontSize(7); doc.setTextColor(51, 65, 85);
@@ -332,16 +420,7 @@ async function buildReportPdf(
         let x = m, rowMaxH = 0;
         ensureSpace(thumbH + 4);
         for (const photo of reqPhotos) {
-          let dataUrl: string | null = null;
-          try {
-            const { data: fileBlob } = await supabaseAdmin.storage.from(STORAGE_BUCKET).download(photo.storage_path);
-            if (fileBlob) {
-              const buf = new Uint8Array(await fileBlob.arrayBuffer());
-              const ext = (photo.storage_path.split(".").pop() || "jpg").toLowerCase();
-              const mime = ext === "png" ? "image/png" : "image/jpeg";
-              dataUrl = `data:${mime};base64,${bytesToBase64(buf)}`;
-            }
-          } catch { /* skip missing photo */ }
+          const dataUrl = wrDataUrlByPhotoId.get(photo.id) ?? null;
 
           if (x + maxThumbW > w - m) { x = m; cursorY += rowMaxH + 2; rowMaxH = 0; ensureSpace(thumbH + 4); }
 
@@ -367,15 +446,19 @@ async function buildReportPdf(
       doc.line(m, cursorY, w - m, cursorY);
       cursorY += 4;
     }
+    stepTimer();
   }
 
+  stepTimer = time("pdf-output");
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i); doc.setFontSize(6.5); doc.setTextColor(120, 130, 140);
     doc.text(`Generated ${new Date().toLocaleString("id-ID")} | Page ${i}/${pages}`, w / 2, h - 4, { align: "center" });
   }
-
-  return new Uint8Array(doc.output("arraybuffer") as ArrayBuffer);
+  const bytes = new Uint8Array(doc.output("arraybuffer") as ArrayBuffer);
+  stepTimer();
+  totalTimer();
+  return bytes;
 }
 
 async function sendEmailWithAttachment(apiKey: string, fromEmail: string, fromName: string, to: string[], subject: string, html: string, pdfBytes: Uint8Array, filename: string) {
@@ -463,6 +546,7 @@ Deno.serve(async (req: Request) => {
     const fromName = Deno.env.get("REPORT_FROM_NAME") || "Equipment Monitoring";
 
     step = "send-email";
+    const sendEmailTimer = time("send-email");
     const formatted = new Date(targetDate + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
     const result = await sendEmailWithAttachment(
       brevoKey,
@@ -474,6 +558,7 @@ Deno.serve(async (req: Request) => {
       pdfBytes,
       `monitoring-report-${targetDate}.pdf`
     );
+    sendEmailTimer();
 
     if (!result.ok) {
       console.error("send-shift-report: brevo send failed", result.status, result.body);

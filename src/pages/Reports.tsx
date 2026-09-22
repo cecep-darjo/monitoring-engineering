@@ -76,11 +76,12 @@ export default function Reports() {
       const dayStart = new Date(`${reportDate}T00:00:00+07:00`).toISOString();
       const dayEnd = new Date(new Date(`${reportDate}T00:00:00+07:00`).getTime() + 24 * 60 * 60 * 1000).toISOString();
 
-      const [{ data: values }, { data: photos }, { data: parameters }, { data: workRequests }] = await Promise.all([
+      const [{ data: values }, { data: photos }, { data: parameters }, { data: workRequests }, { data: schedules }] = await Promise.all([
         supabase.from('monitoring_values').select('*').in('round_id', roundIds),
         supabase.from('monitoring_photos').select('*').in('round_id', roundIds),
         supabase.from('parameters').select('*'),
         supabase.from('work_requests').select('*').gte('created_at', dayStart).lt('created_at', dayEnd).order('created_at'),
+        supabase.from('schedules').select('machine_id, shift_number, round_number').eq('is_active', true),
       ]);
 
       const photoUrls: Record<string, string> = {};
@@ -111,6 +112,7 @@ export default function Reports() {
         workRequests: workRequests || [],
         workRequestPhotos: workRequestPhotos || [],
         workRequestPhotoUrls,
+        schedules: schedules || [],
         machineFilter: selectedMachine === 'all' ? null : machines.find((m) => m.id === selectedMachine)?.name || null,
         shiftFilter: shiftFilter === 'all' ? null : Number(shiftFilter),
       });

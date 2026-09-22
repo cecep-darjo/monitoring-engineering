@@ -12,6 +12,7 @@ interface ReportData {
   workRequests: WorkRequest[];
   workRequestPhotos: WorkRequestPhoto[];
   workRequestPhotoUrls: Record<string, string>;
+  schedules: { machine_id: string; shift_number: number; round_number: number }[];
   machineFilter: string | null;
   shiftFilter: number | null;
 }
@@ -21,7 +22,6 @@ const STATUS_COLOR: Record<string, [number, number, number]> = {
   warning: [217, 119, 6],
   abnormal: [220, 38, 38],
 };
-const NA_FILL: [number, number, number] = [100, 100, 100];
 
 const ALL_SLOTS: { shift: number; round: number }[] = [
   { shift: 1, round: 1 }, { shift: 1, round: 2 },
@@ -76,7 +76,7 @@ function getImageSize(dataUrl: string): Promise<{ w: number; h: number }> {
 }
 
 export async function generateReportPDF(data: ReportData) {
-  const { date, rounds, values, photos, photoUrls, parameters, workRequests, workRequestPhotos, workRequestPhotoUrls, machineFilter, shiftFilter } = data;
+  const { date, rounds, values, photos, photoUrls, parameters, workRequests, workRequestPhotos, workRequestPhotoUrls, schedules, machineFilter, shiftFilter } = data;
   const doc = new jsPDF('l', 'mm', 'a4');
   const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight(), m = 8;
   const bottomLimit = h - 12;
@@ -104,6 +104,10 @@ export async function generateReportPDF(data: ReportData) {
   // round lookup: machine_id -> "shift-round" -> round
   const roundBySlot = new Map<string, MonitoringRound>();
   for (const r of rounds) roundBySlot.set(`${r.machine_id}|${r.shift_number}|${r.round_number}`, r);
+
+  // Which machine+shift+round combos are actually scheduled, so a missing round can be
+  // told apart from a slot that was never supposed to be monitored in the first place.
+  const scheduledSlots = new Set(schedules.map((s) => `${s.machine_id}|${s.shift_number}|${s.round_number}`));
 
   const valuesByRoundId = new Map<string, MonitoringValue[]>();
   for (const v of values) {
@@ -159,9 +163,18 @@ export async function generateReportPDF(data: ReportData) {
     const techRow = ['Teknisi Monitoring', '-', '-'];
     const techRowStatus: string[] = [];
     for (const slot of slots) {
-      const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
-      techRow.push(round ? round.technician_name : 'N/A');
-      techRowStatus.push(round ? 'meta' : 'na');
+      const key = `${machineId}|${slot.shift}|${slot.round}`;
+      const round = roundBySlot.get(key);
+      if (round) {
+        techRow.push(round.technician_name);
+        techRowStatus.push('meta');
+      } else if (scheduledSlots.has(key)) {
+        techRow.push('Tidak Dilakukan');
+        techRowStatus.push('missed');
+      } else {
+        techRow.push('N/A');
+        techRowStatus.push('na');
+      }
     }
     techRow.push('');
     body.push(techRow);
@@ -175,12 +188,16 @@ export async function generateReportPDF(data: ReportData) {
       const notesSet = new Set<string>();
 
       for (const slot of slots) {
-        const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
+        const key = `${machineId}|${slot.shift}|${slot.round}`;
+        const round = roundBySlot.get(key);
         const val = round ? (valuesByRoundId.get(round.id) || []).find(v => v.parameter_id === paramId) : undefined;
         if (val) {
           row.push(val.value && val.value.trim() ? val.value : '\u2014');
           rowStatus.push(val.status);
           if (val.notes && val.notes.trim()) notesSet.add(val.notes.trim());
+        } else if (scheduledSlots.has(key)) {
+          row.push('Tidak Dilakukan');
+          rowStatus.push('missed');
         } else {
           row.push('N/A');
           rowStatus.push('na');
@@ -208,9 +225,13 @@ export async function generateReportPDF(data: ReportData) {
         if (c.section === 'body' && c.column.index >= slotStart && c.column.index < slotStart + slots.length) {
           const status = statusGrid[c.row.index][c.column.index - slotStart];
           if (status === 'na') {
-            c.cell.styles.fillColor = NA_FILL;
-            c.cell.styles.textColor = 255;
+            c.cell.styles.fillColor = [241, 245, 249];
+            c.cell.styles.textColor = [148, 163, 184];
             c.cell.styles.fontStyle = 'italic';
+          } else if (status === 'missed') {
+            c.cell.styles.fillColor = [254, 243, 199];
+            c.cell.styles.textColor = [180, 83, 9];
+            c.cell.styles.fontStyle = 'bold';
           } else if (status === 'meta') {
             c.cell.styles.fillColor = [234, 244, 252];
             c.cell.styles.textColor = [12, 58, 89];
