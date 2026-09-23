@@ -243,7 +243,10 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     setParams(items);
 
     // For "must increase" parameters (e.g. running hours), look up the most recent prior
-    // entry on this machine so we can block a new value that's lower than it.
+    // entry on this machine so we can block a new value that's lower than it. When
+    // editing/creating a round from an earlier date (via admin override), "prior" must
+    // mean chronologically before THIS round — not just the most recent one overall,
+    // which could actually be a newer entry made after this one.
     const increasingParamIds = items.filter((p) => p.parameter.must_increase).map((p) => p.parameter.id);
     if (increasingParamIds.length > 0) {
       const { data: priorRows } = await supabase
@@ -252,6 +255,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
         .in('parameter_id', increasingParamIds)
         .eq('monitoring_rounds.machine_id', machineId);
 
+      const thisRoundSortKey = `${monitoringDate}-${shift}-${round}`;
       const latestByParam: Record<string, { value: number; sortKey: string }> = {};
       for (const row of (priorRows || []) as any[]) {
         if (existingRound && row.round_id === existingRound.id) continue; // skip the round we're editing itself
@@ -259,6 +263,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
         if (isNaN(numVal)) continue;
         const r = row.monitoring_rounds;
         const sortKey = `${r.monitoring_date}-${r.shift_number}-${r.round_number}`;
+        if (sortKey >= thisRoundSortKey) continue; // only entries strictly before this round count as "prior"
         const current = latestByParam[row.parameter_id];
         if (!current || sortKey > current.sortKey) {
           latestByParam[row.parameter_id] = { value: numVal, sortKey };
