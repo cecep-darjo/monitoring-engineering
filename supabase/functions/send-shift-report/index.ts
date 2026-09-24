@@ -116,16 +116,26 @@ async function buildReportPdf(
   if (!rounds || rounds.length === 0) return null;
 
   const roundIds = rounds.map((r: any) => r.id);
-  const [{ data: values }, { data: photos }, { data: parameters }, { data: schedules }] = await Promise.all([
+  const [{ data: values }, { data: photos }, { data: parameters }, { data: schedules }, { data: scheduleParameters }] = await Promise.all([
     supabaseAdmin.from("monitoring_values").select("*").in("round_id", roundIds),
     supabaseAdmin.from("monitoring_photos").select("*").in("round_id", roundIds),
     supabaseAdmin.from("parameters").select("*"),
-    supabaseAdmin.from("schedules").select("machine_id, shift_number, round_number").eq("is_active", true),
+    supabaseAdmin.from("schedules").select("id, machine_id, shift_number, round_number").eq("is_active", true),
+    supabaseAdmin.from("schedule_parameters").select("schedule_id, parameter_id, sort_order, depends_on_parameter_id, depends_on_value"),
   ]);
   const valuesArr = values || [];
   const photosArr = photos || [];
   const paramById = new Map((parameters || []).map((p: any) => [p.id, p]));
   const scheduledSlots = new Set((schedules || []).map((s: any) => `${s.machine_id}|${s.shift_number}|${s.round_number}`));
+  const scheduleBySlot = new Map((schedules || []).map((s: any) => [`${s.machine_id}|${s.shift_number}|${s.round_number}`, s]));
+  const scheduleParamsByScheduleId = new Map<string, any[]>();
+  for (const sp of scheduleParameters || []) {
+    if (!scheduleParamsByScheduleId.has(sp.schedule_id)) scheduleParamsByScheduleId.set(sp.schedule_id, []);
+    scheduleParamsByScheduleId.get(sp.schedule_id)!.push(sp);
+  }
+  for (const arr of scheduleParamsByScheduleId.values()) {
+    arr.sort((a, b) => a.sort_order - b.sort_order);
+  }
   stepTimer();
 
   const doc = new jsPDF("l", "mm", "a4");
@@ -176,11 +186,24 @@ async function buildReportPdf(
   for (const machineName of machineOrder) {
     const machineId = machineIdByName.get(machineName)!;
     const paramOrder: string[] = [];
+    const seenParamIds = new Set<string>();
+    for (const slot of ALL_SLOTS) {
+      const schedule = scheduleBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
+      if (!schedule) continue;
+      const configured = scheduleParamsByScheduleId.get(schedule.id) || [];
+      for (const sp of configured) {
+        if (seenParamIds.has(sp.parameter_id)) continue;
+        seenParamIds.add(sp.parameter_id);
+        paramOrder.push(sp.parameter_id);
+      }
+    }
     for (const slot of ALL_SLOTS) {
       const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
       if (!round) continue;
       for (const v of valuesByRoundId.get(round.id) || []) {
-        if (!paramOrder.includes(v.parameter_id)) paramOrder.push(v.parameter_id);
+        if (seenParamIds.has(v.parameter_id)) continue;
+        seenParamIds.add(v.parameter_id);
+        paramOrder.push(v.parameter_id);
       }
     }
     if (paramOrder.length === 0) continue;
@@ -226,12 +249,30 @@ async function buildReportPdf(
       for (const slot of ALL_SLOTS) {
         const key = `${machineId}|${slot.shift}|${slot.round}`;
         const round = roundBySlot.get(key);
-        const val = round ? (valuesByRoundId.get(round.id) || []).find((v: any) => v.parameter_id === paramId) : undefined;
-        if (val) {
-          row.push(val.value && val.value.trim() ? val.value : "\u2014");
+        const roundValues = round ? (valuesByRoundId.get(round.id) || []) : [];
+        const val = roundValues.find((v: any) => v.parameter_id === paramId);
+        const schedule = scheduleBySlot.get(key);
+        const scheduleParam = schedule
+          ? (scheduleParamsByScheduleId.get(schedule.id) || []).find((sp: any) => sp.parameter_id === paramId)
+          : undefined;
+
+        let isExpectedParam = false;
+        if (scheduleParam) {
+          if (!round) {
+            isExpectedParam = true;
+          } else if (!scheduleParam.depends_on_parameter_id) {
+            isExpectedParam = true;
+          } else {
+            const triggerVal = roundValues.find((v: any) => v.parameter_id === scheduleParam.depends_on_parameter_id)?.value;
+            isExpectedParam = triggerVal === scheduleParam.depends_on_value;
+          }
+        }
+
+        if (val && val.value && val.value.trim()) {
+          row.push(val.value);
           rowStatus.push(val.status);
           if (val.notes && val.notes.trim()) notesSet.add(val.notes.trim());
-        } else if (scheduledSlots.has(key)) {
+        } else if (isExpectedParam) {
           row.push("Tidak Dilakukan");
           rowStatus.push("missed");
         } else {

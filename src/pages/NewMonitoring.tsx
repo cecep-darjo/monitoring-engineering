@@ -364,6 +364,13 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       return;
     }
 
+    const activeParams = params.filter((p) => isParamActive(p));
+    const incompleteParam = activeParams.find((p) => !p.value || !p.value.trim());
+    if (incompleteParam) {
+      setError(`Parameter "${incompleteParam.parameter.name}" belum diisi. Lengkapi semua parameter yang tampil sebelum submit.`);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -393,10 +400,9 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
         if (roundError) throw roundError;
         roundId = roundData.id;
       }
-      const activeParams = params.filter((p) => isParamActive(p));
       const valuesToInsert = activeParams.map((p) => ({ round_id: roundId!, parameter_id: p.parameter.id,
-        parameter_name: p.parameter.name, value: p.value || null, unit: p.parameter.unit,
-        status: p.value ? p.status : 'normal', notes: p.notes || null }));
+        parameter_name: p.parameter.name, value: p.value!.trim(), unit: p.parameter.unit,
+        status: p.status, notes: p.notes || null }));
       const { error: valuesError } = await supabase.from('monitoring_values').insert(valuesToInsert);
       if (valuesError) throw valuesError;
 

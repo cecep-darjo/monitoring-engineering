@@ -12,7 +12,8 @@ interface ReportData {
   workRequests: WorkRequest[];
   workRequestPhotos: WorkRequestPhoto[];
   workRequestPhotoUrls: Record<string, string>;
-  schedules: { machine_id: string; shift_number: number; round_number: number }[];
+  schedules: { id: string; machine_id: string; shift_number: number; round_number: number }[];
+  scheduleParameters: { schedule_id: string; parameter_id: string; sort_order: number; depends_on_parameter_id: string | null; depends_on_value: string | null }[];
   machineFilter: string | null;
   shiftFilter: number | null;
 }
@@ -76,7 +77,7 @@ function getImageSize(dataUrl: string): Promise<{ w: number; h: number }> {
 }
 
 export async function generateReportPDF(data: ReportData) {
-  const { date, rounds, values, photos, photoUrls, parameters, workRequests, workRequestPhotos, workRequestPhotoUrls, schedules, machineFilter, shiftFilter } = data;
+  const { date, rounds, values, photos, photoUrls, parameters, workRequests, workRequestPhotos, workRequestPhotoUrls, schedules, scheduleParameters, machineFilter, shiftFilter } = data;
   const doc = new jsPDF('l', 'mm', 'a4');
   const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight(), m = 8;
   const bottomLimit = h - 12;
@@ -108,6 +109,15 @@ export async function generateReportPDF(data: ReportData) {
   // Which machine+shift+round combos are actually scheduled, so a missing round can be
   // told apart from a slot that was never supposed to be monitored in the first place.
   const scheduledSlots = new Set(schedules.map((s) => `${s.machine_id}|${s.shift_number}|${s.round_number}`));
+  const scheduleBySlot = new Map(schedules.map((s) => [`${s.machine_id}|${s.shift_number}|${s.round_number}`, s] as const));
+  const scheduleParamsByScheduleId = new Map<string, ReportData['scheduleParameters']>();
+  for (const sp of scheduleParameters) {
+    if (!scheduleParamsByScheduleId.has(sp.schedule_id)) scheduleParamsByScheduleId.set(sp.schedule_id, []);
+    scheduleParamsByScheduleId.get(sp.schedule_id)!.push(sp);
+  }
+  for (const arr of scheduleParamsByScheduleId.values()) {
+    arr.sort((a, b) => a.sort_order - b.sort_order);
+  }
 
   const valuesByRoundId = new Map<string, MonitoringValue[]>();
   for (const v of values) {
@@ -136,13 +146,26 @@ export async function generateReportPDF(data: ReportData) {
   for (const machineName of machineOrder) {
     const machineId = machineIdByName.get(machineName)!;
 
-    // Parameters that appear for this machine, first-seen order
+    // Parameters to show = configured in schedule (ordered), plus any historic values found.
     const paramOrder: string[] = [];
+    const seenParamIds = new Set<string>();
+    for (const slot of slots) {
+      const schedule = scheduleBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
+      if (!schedule) continue;
+      const configured = scheduleParamsByScheduleId.get(schedule.id) || [];
+      for (const sp of configured) {
+        if (seenParamIds.has(sp.parameter_id)) continue;
+        seenParamIds.add(sp.parameter_id);
+        paramOrder.push(sp.parameter_id);
+      }
+    }
     for (const slot of slots) {
       const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
       if (!round) continue;
       for (const v of valuesByRoundId.get(round.id) || []) {
-        if (!paramOrder.includes(v.parameter_id)) paramOrder.push(v.parameter_id);
+        if (seenParamIds.has(v.parameter_id)) continue;
+        seenParamIds.add(v.parameter_id);
+        paramOrder.push(v.parameter_id);
       }
     }
     if (paramOrder.length === 0) continue;
@@ -190,12 +213,31 @@ export async function generateReportPDF(data: ReportData) {
       for (const slot of slots) {
         const key = `${machineId}|${slot.shift}|${slot.round}`;
         const round = roundBySlot.get(key);
-        const val = round ? (valuesByRoundId.get(round.id) || []).find(v => v.parameter_id === paramId) : undefined;
-        if (val) {
-          row.push(val.value && val.value.trim() ? val.value : '\u2014');
+        const roundValues = round ? (valuesByRoundId.get(round.id) || []) : [];
+        const val = roundValues.find(v => v.parameter_id === paramId);
+        const schedule = scheduleBySlot.get(key);
+        const scheduleParam = schedule
+          ? (scheduleParamsByScheduleId.get(schedule.id) || []).find((sp) => sp.parameter_id === paramId)
+          : undefined;
+
+        let isExpectedParam = false;
+        if (scheduleParam) {
+          if (!round) {
+            // Round belum dilakukan, anggap semua parameter terjadwal sebagai "harusnya diisi".
+            isExpectedParam = true;
+          } else if (!scheduleParam.depends_on_parameter_id) {
+            isExpectedParam = true;
+          } else {
+            const triggerVal = roundValues.find((v) => v.parameter_id === scheduleParam.depends_on_parameter_id)?.value;
+            isExpectedParam = triggerVal === scheduleParam.depends_on_value;
+          }
+        }
+
+        if (val && val.value && val.value.trim()) {
+          row.push(val.value);
           rowStatus.push(val.status);
           if (val.notes && val.notes.trim()) notesSet.add(val.notes.trim());
-        } else if (scheduledSlots.has(key)) {
+        } else if (isExpectedParam) {
           row.push('Tidak Dilakukan');
           rowStatus.push('missed');
         } else {
