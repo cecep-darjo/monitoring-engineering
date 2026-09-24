@@ -106,9 +106,6 @@ export async function generateReportPDF(data: ReportData) {
   const roundBySlot = new Map<string, MonitoringRound>();
   for (const r of rounds) roundBySlot.set(`${r.machine_id}|${r.shift_number}|${r.round_number}`, r);
 
-  // Which machine+shift+round combos are actually scheduled, so a missing round can be
-  // told apart from a slot that was never supposed to be monitored in the first place.
-  const scheduledSlots = new Set(schedules.map((s) => `${s.machine_id}|${s.shift_number}|${s.round_number}`));
   const scheduleBySlot = new Map(schedules.map((s) => [`${s.machine_id}|${s.shift_number}|${s.round_number}`, s] as const));
   const scheduleParamsByScheduleId = new Map<string, ReportData['scheduleParameters']>();
   for (const sp of scheduleParameters) {
@@ -117,6 +114,14 @@ export async function generateReportPDF(data: ReportData) {
   }
   for (const arr of scheduleParamsByScheduleId.values()) {
     arr.sort((a, b) => a.sort_order - b.sort_order);
+  }
+
+  // Slot dianggap "terjadwal" hanya jika schedule tersebut punya minimal 1 parameter aktif.
+  const scheduledSlotsWithParams = new Set<string>();
+  for (const [slotKey, schedule] of scheduleBySlot.entries()) {
+    if ((scheduleParamsByScheduleId.get(schedule.id) || []).length > 0) {
+      scheduledSlotsWithParams.add(slotKey);
+    }
   }
 
   const valuesByRoundId = new Map<string, MonitoringValue[]>();
@@ -191,7 +196,7 @@ export async function generateReportPDF(data: ReportData) {
       if (round) {
         techRow.push(round.technician_name);
         techRowStatus.push('meta');
-      } else if (scheduledSlots.has(key)) {
+      } else if (scheduledSlotsWithParams.has(key)) {
         techRow.push('Tidak Dilakukan');
         techRowStatus.push('missed');
       } else {

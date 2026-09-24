@@ -126,7 +126,6 @@ async function buildReportPdf(
   const valuesArr = values || [];
   const photosArr = photos || [];
   const paramById = new Map((parameters || []).map((p: any) => [p.id, p]));
-  const scheduledSlots = new Set((schedules || []).map((s: any) => `${s.machine_id}|${s.shift_number}|${s.round_number}`));
   const scheduleBySlot = new Map((schedules || []).map((s: any) => [`${s.machine_id}|${s.shift_number}|${s.round_number}`, s]));
   const scheduleParamsByScheduleId = new Map<string, any[]>();
   for (const sp of scheduleParameters || []) {
@@ -135,6 +134,13 @@ async function buildReportPdf(
   }
   for (const arr of scheduleParamsByScheduleId.values()) {
     arr.sort((a, b) => a.sort_order - b.sort_order);
+  }
+
+  const scheduledSlotsWithParams = new Set<string>();
+  for (const [slotKey, schedule] of scheduleBySlot.entries()) {
+    if ((scheduleParamsByScheduleId.get(schedule.id) || []).length > 0) {
+      scheduledSlotsWithParams.add(slotKey);
+    }
   }
   stepTimer();
 
@@ -228,7 +234,7 @@ async function buildReportPdf(
       if (round) {
         techRow.push(round.technician_name);
         techRowStatus.push("meta");
-      } else if (scheduledSlots.has(key)) {
+      } else if (scheduledSlotsWithParams.has(key)) {
         techRow.push("Tidak Dilakukan");
         techRowStatus.push("missed");
       } else {
