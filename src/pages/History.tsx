@@ -9,15 +9,21 @@ import {
   CheckCircle2,
   Camera,
   Eye,
+  Pencil,
+  Save,
+  Loader2,
 } from 'lucide-react';
 import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
+import { useAuth } from '@/lib/AuthContext';
 import {
   SHIFT_SHORT,
   getStatusColor,
+  evaluateValueStatus,
   type MonitoringRound,
   type MonitoringValue,
   type MonitoringPhoto,
   type Machine,
+  type Parameter,
 } from '@/lib/types';
 
 interface HistoryProps {
@@ -36,6 +42,12 @@ export default function History({}: HistoryProps) {
   const [selectedRound, setSelectedRound] = useState<RoundDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [paramMetaById, setParamMetaById] = useState<Record<string, Parameter>>({});
+  const [isEditing, setIsEditing] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editGeneralNotes, setEditGeneralNotes] = useState('');
+  const [editValues, setEditValues] = useState<Record<string, { value: string; notes: string }>>({});
 
   // Filters
   const [search, setSearch] = useState('');
@@ -44,6 +56,8 @@ export default function History({}: HistoryProps) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
 
   useEffect(() => {
     loadRounds();
@@ -97,6 +111,8 @@ export default function History({}: HistoryProps) {
   async function viewRound(round: MonitoringRound) {
     setDetailLoading(true);
     setSelectedRound(null);
+    setIsEditing(false);
+    setEditError(null);
 
     const [{ data: values }, { data: photos }] = await Promise.all([
       supabase.from('monitoring_values').select('*').eq('round_id', round.id),
@@ -109,6 +125,17 @@ export default function History({}: HistoryProps) {
       photos: photos || [],
     };
     setSelectedRound(detail);
+    setEditGeneralNotes(detail.notes || '');
+
+    const ids = Array.from(new Set((values || []).map((v: any) => v.parameter_id).filter(Boolean)));
+    if (ids.length > 0) {
+      const { data: paramData } = await supabase.from('parameters').select('*').in('id', ids);
+      const map: Record<string, Parameter> = {};
+      for (const p of paramData || []) map[p.id] = p as Parameter;
+      setParamMetaById(map);
+    } else {
+      setParamMetaById({});
+    }
 
     const urls: Record<string, string> = {};
     for (const photo of photos || []) {
@@ -119,6 +146,86 @@ export default function History({}: HistoryProps) {
     }
     setPhotoUrls(urls);
     setDetailLoading(false);
+  }
+
+  function startEdit() {
+    if (!selectedRound) return;
+    if (!isAdmin) {
+      setEditError('Hanya admin yang dapat mengubah data monitoring dari History.');
+      return;
+    }
+    const draft: Record<string, { value: string; notes: string }> = {};
+    for (const v of selectedRound.values) {
+      draft[v.id] = { value: v.value || '', notes: v.notes || '' };
+    }
+    setEditValues(draft);
+    setEditGeneralNotes(selectedRound.notes || '');
+    setEditError(null);
+    setIsEditing(true);
+  }
+
+  function cancelEdit() {
+    setIsEditing(false);
+    setEditError(null);
+  }
+
+  async function saveEdit() {
+    if (!selectedRound) return;
+    if (!isAdmin) {
+      setEditError('Hanya admin yang dapat menyimpan perubahan data monitoring.');
+      return;
+    }
+
+    const normalized = selectedRound.values.map((v) => {
+      const draft = editValues[v.id];
+      const value = (draft?.value ?? v.value ?? '').trim();
+      const notes = (draft?.notes ?? v.notes ?? '').trim();
+      const meta = paramMetaById[v.parameter_id];
+      const status = meta ? evaluateValueStatus(value, meta) : v.status;
+      return { id: v.id, parameterName: v.parameter_name, value, notes, status };
+    });
+
+    const incomplete = normalized.find((x) => !x.value);
+    if (incomplete) {
+      setEditError(`Parameter "${incomplete.parameterName}" belum diisi. Lengkapi nilai sebelum simpan.`);
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      for (const item of normalized) {
+        const { error } = await supabase
+          .from('monitoring_values')
+          .update({ value: item.value, notes: item.notes || null, status: item.status })
+          .eq('id', item.id);
+        if (error) throw error;
+      }
+
+      const nextGeneralNotes = editGeneralNotes.trim() || null;
+      const { error: roundError } = await supabase
+        .from('monitoring_rounds')
+        .update({ notes: nextGeneralNotes, completed_at: new Date().toISOString() })
+        .eq('id', selectedRound.id);
+      if (roundError) throw roundError;
+
+      const updatedValues = selectedRound.values.map((v) => {
+        const draft = editValues[v.id];
+        const value = (draft?.value ?? v.value ?? '').trim();
+        const notes = (draft?.notes ?? v.notes ?? '').trim();
+        const meta = paramMetaById[v.parameter_id];
+        const status = meta ? evaluateValueStatus(value, meta) : v.status;
+        return { ...v, value, notes: notes || null, status };
+      });
+
+      setSelectedRound({ ...selectedRound, values: updatedValues, notes: nextGeneralNotes });
+      setRounds((prev) => prev.map((r) => (r.id === selectedRound.id ? { ...r, notes: nextGeneralNotes } : r)));
+      setIsEditing(false);
+    } catch (err: any) {
+      setEditError(err?.message || 'Gagal menyimpan perubahan monitoring.');
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   const hasActiveFilters =
@@ -265,7 +372,7 @@ export default function History({}: HistoryProps) {
             className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between gap-3">
               <div>
                 <h2 className="font-bold text-slate-900">{selectedRound.machine_name}</h2>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -274,9 +381,27 @@ export default function History({}: HistoryProps) {
                   })} · {SHIFT_SHORT[selectedRound.shift_number]} · Round {selectedRound.round_number}
                 </p>
               </div>
-              <button onClick={() => setSelectedRound(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {isAdmin && (!isEditing ? (
+                  <button onClick={startEdit} className="btn-secondary text-xs px-3 py-1.5">
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={cancelEdit} disabled={editSaving} className="btn-ghost text-xs px-3 py-1.5">
+                      Batal
+                    </button>
+                    <button onClick={saveEdit} disabled={editSaving} className="btn-primary text-xs px-3 py-1.5">
+                      {editSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      Simpan
+                    </button>
+                  </>
+                ))}
+                <button onClick={() => setSelectedRound(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="p-6 space-y-4">
@@ -285,6 +410,12 @@ export default function History({}: HistoryProps) {
                 <span className="font-medium text-slate-700">{selectedRound.technician_name}</span>
               </div>
 
+              {!isAdmin && (
+                <div className="rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+                  Mode baca saja. Perubahan data monitoring dari History hanya untuk level admin.
+                </div>
+              )}
+
               {/* Values */}
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-slate-700">Parameter Readings</h3>
@@ -292,22 +423,60 @@ export default function History({}: HistoryProps) {
                   <p className="text-sm text-slate-400">No values recorded.</p>
                 ) : (
                   <div className="space-y-2">
-                    {selectedRound.values.map((v) => (
-                      <div key={v.id} className="flex items-start justify-between p-3 rounded-lg bg-slate-50">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900">{v.parameter_name}</p>
-                          <p className="text-sm text-slate-600 mt-0.5">
-                            {v.value || '—'} {v.unit && <span className="text-slate-400">{v.unit}</span>}
-                          </p>
-                          {v.notes && (
-                            <p className="text-xs text-slate-400 mt-1">{v.notes}</p>
-                          )}
+                    {selectedRound.values.map((v) => {
+                      const draft = editValues[v.id] || { value: v.value || '', notes: v.notes || '' };
+                      const displayStatus = isEditing
+                        ? (paramMetaById[v.parameter_id] ? evaluateValueStatus(draft.value, paramMetaById[v.parameter_id]) : v.status)
+                        : v.status;
+                      return (
+                        <div key={v.id} className="p-3 rounded-lg bg-slate-50">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-slate-900">{v.parameter_name}</p>
+                              {isEditing ? (
+                                <div className="mt-1.5 space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={draft.value}
+                                      onChange={(e) => setEditValues((prev) => ({
+                                        ...prev,
+                                        [v.id]: { ...(prev[v.id] || { value: v.value || '', notes: v.notes || '' }), value: e.target.value },
+                                      }))}
+                                      className="input-field text-sm"
+                                      placeholder="Masukkan nilai"
+                                    />
+                                    {v.unit && <span className="text-xs text-slate-400 whitespace-nowrap">{v.unit}</span>}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={draft.notes}
+                                    onChange={(e) => setEditValues((prev) => ({
+                                      ...prev,
+                                      [v.id]: { ...(prev[v.id] || { value: v.value || '', notes: v.notes || '' }), notes: e.target.value },
+                                    }))}
+                                    className="input-field text-xs"
+                                    placeholder="Catatan parameter (opsional)"
+                                  />
+                                </div>
+                              ) : (
+                                <>
+                                  <p className="text-sm text-slate-600 mt-0.5">
+                                    {v.value || '—'} {v.unit && <span className="text-slate-400">{v.unit}</span>}
+                                  </p>
+                                  {v.notes && (
+                                    <p className="text-xs text-slate-400 mt-1">{v.notes}</p>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            <span className={`badge ${getStatusColor(displayStatus)} flex-shrink-0`}>
+                              {displayStatus}
+                            </span>
+                          </div>
                         </div>
-                        <span className={`badge ${getStatusColor(v.status)} flex-shrink-0`}>
-                          {v.status}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -346,12 +515,28 @@ export default function History({}: HistoryProps) {
               )}
 
               {/* General Notes */}
-              {selectedRound.notes && (
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700 mb-2">General Notes</h3>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-2">General Notes</h3>
+                {isEditing ? (
+                  <textarea
+                    rows={3}
+                    value={editGeneralNotes}
+                    onChange={(e) => setEditGeneralNotes(e.target.value)}
+                    className="input-field resize-none text-sm"
+                    placeholder="Catatan umum (opsional)"
+                  />
+                ) : selectedRound.notes ? (
                   <p className="text-sm text-slate-600 p-3 rounded-lg bg-slate-50">
                     {selectedRound.notes}
                   </p>
+                ) : (
+                  <p className="text-sm text-slate-400">Tidak ada catatan umum.</p>
+                )}
+              </div>
+
+              {editError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  {editError}
                 </div>
               )}
             </div>
