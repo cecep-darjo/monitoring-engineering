@@ -283,10 +283,30 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     setParams((prev) =>
       prev.map((p, i) => {
         if (i !== idx) return p;
-        const status = evaluateValueStatus(value, p.parameter);
-        return { ...p, value, status };
+        const normalizedValue = p.parameter.type === 'number' ? value.replace(/[−–—]/g, '-') : value;
+        const status = evaluateValueStatus(normalizedValue, p.parameter);
+        return { ...p, value: normalizedValue, status };
       })
     );
+  }
+
+  function toggleNegativeValue(idx: number) {
+    setParams((prev) =>
+      prev.map((p, i) => {
+        if (i !== idx || p.parameter.type !== 'number') return p;
+        const current = (p.value || '').replace(/[−–—]/g, '-');
+        const next = current.startsWith('-') ? current.slice(1) : `-${current}`;
+        const status = evaluateValueStatus(next, p.parameter);
+        return { ...p, value: next, status };
+      })
+    );
+  }
+
+  function isInvalidNumericValue(raw: string): boolean {
+    const v = raw.trim();
+    if (!v) return true;
+    if (v === '-' || v === '.' || v === '-.') return true;
+    return Number.isNaN(Number(v));
   }
 
   function updateParamNotes(idx: number, notes: string) {
@@ -371,6 +391,14 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       return;
     }
 
+    const invalidNumericParam = activeParams.find(
+      (p) => p.parameter.type === 'number' && isInvalidNumericValue(p.value)
+    );
+    if (invalidNumericParam) {
+      setError(`Nilai parameter "${invalidNumericParam.parameter.name}" tidak valid. Gunakan format angka yang benar.`);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -401,7 +429,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
         roundId = roundData.id;
       }
       const valuesToInsert = activeParams.map((p) => ({ round_id: roundId!, parameter_id: p.parameter.id,
-        parameter_name: p.parameter.name, value: p.value!.trim(), unit: p.parameter.unit,
+        parameter_name: p.parameter.name, value: p.value!.trim().replace(/[−–—]/g, '-'), unit: p.parameter.unit,
         status: p.status, notes: p.notes || null }));
       const { error: valuesError } = await supabase.from('monitoring_values').insert(valuesToInsert);
       if (valuesError) throw valuesError;
@@ -763,22 +791,37 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
                     </select>
                   ) : (
                     <div>
-                      <input
-                        type={p.parameter.type === 'number' ? 'text' : 'text'}
-                        inputMode={p.parameter.type === 'number' ? 'decimal' : undefined}
-                        value={p.value}
-                        onChange={(e) => {
-                          if (p.parameter.type === 'number' && !/^-?\d*\.?\d*$/.test(e.target.value)) return;
-                          updateParamValue(idx, e.target.value);
-                        }}
-                        placeholder={`Enter value${p.parameter.unit ? ` (${p.parameter.unit})` : ''}`}
-                        className={`input-field ${
-                          p.parameter.must_increase && previousValues[p.parameter.id] !== undefined &&
-                          p.value !== '' && !isNaN(parseFloat(p.value)) && parseFloat(p.value) < previousValues[p.parameter.id]
-                            ? '!border-red-400 !ring-2 !ring-red-100'
-                            : ''
-                        }`}
-                      />
+                      <div className="flex items-center gap-2">
+                        {p.parameter.type === 'number' && p.parameter.show_minus_button && (
+                          <button
+                            type="button"
+                            onClick={() => toggleNegativeValue(idx)}
+                            className="h-10 min-w-10 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-lg font-semibold hover:border-teal-400 hover:text-teal-600 transition-colors"
+                            title="Toggle minus"
+                          >
+                            -
+                          </button>
+                        )}
+                        <input
+                          type={p.parameter.type === 'number' ? 'text' : 'text'}
+                          inputMode={p.parameter.type === 'number' ? 'decimal' : undefined}
+                          value={p.value}
+                          onChange={(e) => {
+                            const nextValue = p.parameter.type === 'number'
+                              ? e.target.value.replace(/[−–—]/g, '-')
+                              : e.target.value;
+                            if (p.parameter.type === 'number' && !/^-?\d*\.?\d*$/.test(nextValue)) return;
+                            updateParamValue(idx, nextValue);
+                          }}
+                          placeholder={`Enter value${p.parameter.unit ? ` (${p.parameter.unit})` : ''}`}
+                          className={`input-field flex-1 ${
+                            p.parameter.must_increase && previousValues[p.parameter.id] !== undefined &&
+                            p.value !== '' && !isNaN(parseFloat(p.value)) && parseFloat(p.value) < previousValues[p.parameter.id]
+                              ? '!border-red-400 !ring-2 !ring-red-100'
+                              : ''
+                          }`}
+                        />
+                      </div>
                       {p.parameter.must_increase && previousValues[p.parameter.id] !== undefined && (
                         <p className="text-[11px] text-slate-400 mt-1">
                           Entry sebelumnya: <b>{previousValues[p.parameter.id]}{p.parameter.unit ? ` ${p.parameter.unit}` : ''}</b> — nilai baru harus &ge; ini

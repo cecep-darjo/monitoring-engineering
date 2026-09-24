@@ -33,6 +33,7 @@ export interface Parameter {
   is_active: boolean;
   photo_required: boolean;
   must_increase: boolean;
+  show_minus_button: boolean;
   created_at: string;
 }
 

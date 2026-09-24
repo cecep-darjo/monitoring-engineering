@@ -49,6 +49,7 @@ export default function AdminParameters() {
   const [isActive, setIsActive] = useState(true);
   const [photoRequired, setPhotoRequired] = useState(false);
   const [mustIncrease, setMustIncrease] = useState(false);
+  const [showMinusButton, setShowMinusButton] = useState(false);
 
   useEffect(() => {
     loadParams();
@@ -75,6 +76,7 @@ export default function AdminParameters() {
     setIsActive(true);
     setPhotoRequired(false);
     setMustIncrease(false);
+    setShowMinusButton(false);
     setError(null);
     setShowForm(true);
   }
@@ -90,6 +92,7 @@ export default function AdminParameters() {
     setIsActive(param.is_active);
     setPhotoRequired(param.photo_required);
     setMustIncrease(param.must_increase);
+    setShowMinusButton(param.show_minus_button ?? false);
     setError(null);
     setShowForm(true);
   }
@@ -112,6 +115,7 @@ export default function AdminParameters() {
       is_active: isActive,
       photo_required: photoRequired,
       must_increase: type === 'number' ? mustIncrease : false,
+      show_minus_button: type === 'number' ? showMinusButton : false,
     };
 
     if (editing) {
@@ -204,6 +208,9 @@ export default function AdminParameters() {
                   )}
                   {param.must_increase && (
                     <span className="badge bg-blue-50 text-blue-700 border-blue-200">Harus Naik</span>
+                  )}
+                  {param.show_minus_button && (
+                    <span className="badge bg-purple-50 text-purple-700 border-purple-200">Tombol -</span>
                   )}
                   <span
                     className={`badge ${
@@ -330,12 +337,23 @@ export default function AdminParameters() {
                     <span className="text-sm text-slate-700">Nilai Harus Selalu Naik (mis. Running Hours)</span>
                   </label>
                 )}
+                {type === 'number' && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={showMinusButton} onChange={(e) => setShowMinusButton(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                    <span className="text-sm text-slate-700">Tampilkan Tombol Minus (-) di Form Monitoring</span>
+                  </label>
+                )}
                 <p className="text-xs text-slate-400 pl-6">
                   Kalau dicentang, kolom upload foto akan ditampilkan untuk parameter ini saat monitoring (tetap opsional, tidak wajib diisi). Kalau tidak dicentang, kolom upload foto tidak akan muncul sama sekali.
                 </p>
                 {type === 'number' && (
                   <p className="text-xs text-slate-400 pl-6">
                     "Nilai Harus Selalu Naik": entry baru akan DITOLAK kalau nilainya lebih kecil dari entry terakhir untuk parameter ini di mesin yang sama. Cocok untuk parameter akumulatif seperti running hours / counter.
+                  </p>
+                )}
+                {type === 'number' && (
+                  <p className="text-xs text-slate-400 pl-6">
+                    "Tombol Minus": membantu perangkat HP yang keyboard numeriknya tidak punya tombol '-' agar teknisi tetap bisa input nilai negatif.
                   </p>
                 )}
               </div>
