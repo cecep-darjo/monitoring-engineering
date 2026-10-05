@@ -116,12 +116,13 @@ async function buildReportPdf(
   if (!rounds || rounds.length === 0) return null;
 
   const roundIds = rounds.map((r: any) => r.id);
-  const [{ data: values }, { data: photos }, { data: parameters }, { data: schedules }, { data: scheduleParameters }] = await Promise.all([
+  const [{ data: values }, { data: photos }, { data: parameters }, { data: schedules }, { data: scheduleParameters }, { data: roundConclusions }] = await Promise.all([
     supabaseAdmin.from("monitoring_values").select("*").in("round_id", roundIds),
     supabaseAdmin.from("monitoring_photos").select("*").in("round_id", roundIds),
     supabaseAdmin.from("parameters").select("*"),
     supabaseAdmin.from("schedules").select("id, machine_id, shift_number, round_number").eq("is_active", true),
     supabaseAdmin.from("schedule_parameters").select("schedule_id, parameter_id, sort_order, depends_on_parameter_id, depends_on_value"),
+    supabaseAdmin.from("round_conclusions").select("*").eq("monitoring_date", targetDate),
   ]);
   const valuesArr = values || [];
   const photosArr = photos || [];
@@ -324,10 +325,11 @@ async function buildReportPdf(
   }
   stepTimer();
 
-  // ---- Komentar / Kesimpulan Round: round-level conclusions entered at the bottom of the
-  //      New Monitoring form, listed independently of the machine matrix above ----
-  const commentedRounds = (rounds as any[]).filter((r) => r.round_comment && r.round_comment.trim());
-  if (commentedRounds.length) {
+  // ---- Komentar / Kesimpulan Round: one conclusion per (shift, round), covering the whole
+  //      round across all machines. Stored in `round_conclusions`, independent of machines ----
+  const conclusions = (roundConclusions as any[] || [])
+    .filter((c) => c.comment && c.comment.trim());
+  if (conclusions.length) {
     ensureSpace(12);
     doc.setFillColor(231, 244, 253);
     doc.rect(m, cursorY, w - m * 2, 6, "F");
@@ -335,20 +337,20 @@ async function buildReportPdf(
     doc.text("KOMENTAR / KESIMPULAN ROUND", m + 2, cursorY + 4.2);
     cursorY += 8;
 
-    const commentBody = commentedRounds
-      .sort((a: any, b: any) => a.machine_name.localeCompare(b.machine_name) || a.shift_number - b.shift_number || a.round_number - b.round_number)
-      .map((r: any) => [r.machine_name, `Shift ${r.shift_number} R${r.round_number}`, r.technician_name, r.round_comment.trim()]);
+    const conclusionBody = conclusions
+      .sort((a: any, b: any) => a.shift_number - b.shift_number || a.round_number - b.round_number)
+      .map((c: any) => [`Shift ${c.shift_number} - Round ${c.round_number}`, c.technician_name || "-", c.comment.trim()]);
 
     ensureSpace(14);
     runAutoTable(doc, {
       startY: cursorY,
-      head: [["MESIN", "SHIFT / ROUND", "TEKNISI", "KOMENTAR / KESIMPULAN"]],
-      body: commentBody,
+      head: [["SHIFT / ROUND", "TEKNISI", "KOMENTAR / KESIMPULAN"]],
+      body: conclusionBody,
       theme: "grid",
       margin: { left: m, right: m },
       styles: { fontSize: 6.5, cellPadding: 1.6, overflow: "linebreak", valign: "top" },
       headStyles: { fillColor: [18, 79, 121], textColor: 255, fontSize: 6.3, cellPadding: 1.5, halign: "center" },
-      columnStyles: { 0: { cellWidth: 70 }, 1: { cellWidth: 30, halign: "center" }, 2: { cellWidth: 46 } },
+      columnStyles: { 0: { cellWidth: 40, halign: "center" }, 1: { cellWidth: 50 } },
     });
     cursorY = (doc as any).lastAutoTable.finalY + 5;
   }

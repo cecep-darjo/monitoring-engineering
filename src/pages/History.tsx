@@ -47,7 +47,6 @@ export default function History({}: HistoryProps) {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editGeneralNotes, setEditGeneralNotes] = useState('');
-  const [editRoundComment, setEditRoundComment] = useState('');
   const [editValues, setEditValues] = useState<Record<string, { value: string; notes: string }>>({});
 
   // Filters
@@ -127,7 +126,6 @@ export default function History({}: HistoryProps) {
     };
     setSelectedRound(detail);
     setEditGeneralNotes(detail.notes || '');
-    setEditRoundComment(detail.round_comment || '');
 
     const ids = Array.from(new Set((values || []).map((v: any) => v.parameter_id).filter(Boolean)));
     if (ids.length > 0) {
@@ -163,8 +161,7 @@ export default function History({}: HistoryProps) {
     setEditValues(draft);
     setEditGeneralNotes(selectedRound.notes || '');
     setEditRoundComment(selectedRound.round_comment || '');
-    setEditError(null);
-    setIsEditing(true);
+    setEdititing(true);
   }
 
   function cancelEdit() {
@@ -208,8 +205,9 @@ export default function History({}: HistoryProps) {
       const nextGeneralNotes = editGeneralNotes.trim() || null;
       const nextRoundComment = editRoundComment.trim() || null;
       const { error: roundError } = await supabase
+        .fro{ error: roundError } = await supabase
         .from('monitoring_rounds')
-        .update({ notes: nextGeneralNotes, round_comment: nextRoundComment, completed_at: new Date().toISOString() })
+        .update({ notes: nextGeneralNotes, completed_at: new Date().toISOString() })
         .eq('id', selectedRound.id);
       if (roundError) throw roundError;
 
@@ -222,10 +220,8 @@ export default function History({}: HistoryProps) {
         return { ...v, value, notes: notes || null, status };
       });
 
-      setSelectedRound({ ...selectedRound, values: updatedValues, notes: nextGeneralNotes, round_comment: nextRoundComment });
-      setRounds((prev) => prev.map((r) => (r.id === selectedRound.id ? { ...r, notes: nextGeneralNotes, round_comment: nextRoundComment } : r)));
-      setIsEditing(false);
-    } catch (err: any) {
+      setSelectedRound({ ...selectedRound, values: updatedValues, notes: nextGeneralNotes });
+      setRounds((prev) => prev.map((r) => (r.id === selectedRound.id ? { ...r, notes: nextGeneralNotes
       setEditError(err?.message || 'Gagal menyimpan perubahan monitoring.');
     } finally {
       setEditSaving(false);
@@ -535,26 +531,6 @@ export default function History({}: HistoryProps) {
                   </p>
                 ) : (
                   <p className="text-sm text-slate-400">Tidak ada catatan umum.</p>
-                )}
-              </div>
-
-              {/* Round Comment */}
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 mb-2">Comment</h3>
-                {isEditing ? (
-                  <textarea
-                    rows={3}
-                    value={editRoundComment}
-                    onChange={(e) => setEditRoundComment(e.target.value)}
-                    className="input-field resize-none text-sm"
-                    placeholder="Komentar round (opsional)"
-                  />
-                ) : selectedRound.round_comment ? (
-                  <p className="text-sm text-slate-600 p-3 rounded-lg bg-slate-50">
-                    {selectedRound.round_comment}
-                  </p>
-                ) : (
-                  <p className="text-sm text-slate-400">Tidak ada komentar.</p>
                 )}
               </div>
 

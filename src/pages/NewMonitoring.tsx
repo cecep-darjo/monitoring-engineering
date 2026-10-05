@@ -65,7 +65,6 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     return local.toISOString().split('T')[0];
   });
   const [generalNotes, setGeneralNotes] = useState('');
-  const [roundComment, setRoundComment] = useState('');
   const [params, setParams] = useState<ParamWithValue[]>([]);
   const [previousValues, setPreviousValues] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -74,18 +73,68 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
   const [success, setSuccess] = useState(false);
   const [editingRoundId, setEditingRoundId] = useState<string | null>(null);
   const [deletedPhotos, setDeletedPhotos] = useState<{ id: string; storage_path: string }[]>([]);
+  const [conclusion, setConclusion] = useState('');
+  const [conclusionSaving, setConclusionSaving] = useState(false);
+  const [conclusionSaved, setConclusionSaved] = useState(false);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [adminOverride, setAdminOverride] = useState(false);
 
   useEffect(() => {
     loadScheduledMachines();
+    loadRoundConclusion();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shiftNumber, roundNumber]);
 
   useEffect(() => {
     refreshEnteredMachines();
+    loadRoundConclusion();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monitoringDate]);
+
+  // Loads the single, shared conclusion for the current (date, shift, round).
+  async function loadRoundConclusion() {
+    const { data } = await supabase
+      .from('round_conclusions')
+      .select('comment')
+      .eq('monitoring_date', monitoringDate)
+      .eq('shift_number', shiftNumber)
+      .eq('round_number', roundNumber)
+      .maybeSingle();
+    setConclusion(data?.comment || '');
+    setConclusionSaved(false);
+  }
+
+  // Saves the shared conclusion for the current (date, shift, round). Uses upsert so it
+  // stays a single row per round regardless of which machine the user picked to enter.
+  async function saveRoundConclusion() {
+    if (!profile) return;
+    const comment = conclusion.trim();
+    if (!comment) return;
+    setConclusionSaving(true);
+    setConclusionSaved(false);
+    try {
+      const { error } = await supabase
+        .from('round_conclusions')
+        .upsert(
+          {
+            monitoring_date: monitoringDate,
+            shift_number: shiftNumber,
+            round_number: roundNumber,
+            comment,
+            technician_id: profile.id,
+            technician_name: profile.full_name,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'monitoring_date,shift_number,round_number' }
+        );
+      if (error) throw error;
+      setConclusionSaved(true);
+    } catch (err: any) {
+      setError(err?.message || 'Gagal menyimpan kesimpulan round.');
+    } finally {
+      setConclusionSaving(false);
+    }
+  }
 
   async function loadScheduledMachines() {
     setLoading(true);
@@ -219,7 +268,6 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       existingValues = data || [];
       setEditingRoundId(existingRound.id);
       setGeneralNotes(existingRound.notes || '');
-      setRoundComment(existingRound.round_comment || '');
 
       const { data: photoData } = await supabase
         .from('monitoring_photos')
@@ -232,7 +280,6 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     } else {
       setEditingRoundId(null); setGeneralNotes('');
     }
-    setRoundComment(existingRound?.round_comment || '');
     setDeletedPhotos([]);
 
     const items: ParamWithValue[] = (spData || []).filter((sp: any) => sp.parameter).map((sp: any) => {
@@ -417,7 +464,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       let roundId = editingRoundId;
       if (roundId) {
         const { error } = await supabase.from('monitoring_rounds').update({
-          notes: generalNotes || null, round_comment: roundComment || null, completed_at: new Date().toISOString(), technician_id: profile.id, technician_name: profile.full_name
+          notes: generalNotes || null, completed_at: new Date().toISOString(), technician_id: profile.id, technician_name: profile.full_name
         }).eq('id', roundId);
         if (error) throw error;
         const { error: deleteError } = await supabase.from('monitoring_values').delete().eq('round_id', roundId);
@@ -426,7 +473,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
         const { data: roundData, error: roundError } = await supabase.from('monitoring_rounds').insert({
           technician_id: profile.id, technician_name: profile.full_name, machine_id: selectedMachine.id,
           machine_name: selectedMachine.name, shift_number: shiftNumber, round_number: roundNumber,
-          monitoring_date: monitoringDate, status: 'completed', notes: generalNotes || null, round_comment: roundComment || null, completed_at: new Date().toISOString(),
+          monitoring_date: monitoringDate, status: 'completed', notes: generalNotes || null, completed_at: new Date().toISOString(),
         }).select().single();
         if (roundError) throw roundError;
         roundId = roundData.id;
@@ -476,7 +523,6 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     setSelectedMachine(null);
     setParams([]);
     setGeneralNotes('');
-    setRoundComment('');
     setSuccess(false);
     setError(null);
     setDeletedPhotos([]);
@@ -627,6 +673,43 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Kesimpulan Round (shared for the whole shift/round) */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-1">
+              <label className="label-text">Kesimpulan Round (Optional)</label>
+              {conclusionSaved && (
+                <span className="text-xs text-emerald-600 font-medium">✓ Tersimpan</span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mb-3">
+              Kesimpulan untuk {SHIFT_LABELS[shiftNumber]} Round {roundNumber} ({getRoundWindowLabel(shiftNumber, roundNumber)})
+              {adminOverride && ` · Tanggal: ${monitoringDate}`} — berlaku untuk seluruh mesin pada round ini.
+            </p>
+            <textarea
+              value={conclusion}
+              onChange={(e) => { setConclusion(e.target.value); setConclusionSaved(false); }}
+              rows={3}
+              placeholder="Tulis kesimpulan pemantauan untuk round ini (opsional). Akan muncul di laporan PDF..."
+              className="input-field resize-none"
+            />
+            <div className="mt-3">
+              <button
+                onClick={saveRoundConclusion}
+                disabled={conclusionSaving || !conclusion.trim()}
+                className="btn-primary"
+              >
+                {conclusionSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  'Simpan Kesimpulan'
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -928,18 +1011,6 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
                   onChange={(e) => setGeneralNotes(e.target.value)}
                   rows={3}
                   placeholder="Any additional observations about this monitoring round..."
-                  className="input-field resize-none"
-                />
-              </div>
-
-              {/* Round Comment */}
-              <div className="card p-5">
-                <label className="label-text">Comment / Kesimpulan (Optional)</label>
-                <textarea
-                  value={roundComment}
-                  onChange={(e) => setRoundComment(e.target.value)}
-                  rows={3}
-                  placeholder="Komentar atau kesimpulan pemantauan untuk round ini (opsional). Akan muncul di laporan PDF..."
                   className="input-field resize-none"
                 />
               </div>

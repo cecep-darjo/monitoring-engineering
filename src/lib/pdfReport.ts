@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { SHIFT_LABELS, ROUND_WINDOWS, type MonitoringRound, type MonitoringValue, type MonitoringPhoto, type Parameter, type WorkRequest, type WorkRequestPhoto } from './types';
+import { SHIFT_LABELS, ROUND_WINDOWS, type MonitoringRound, type MonitoringValue, type MonitoringPhoto, type Parameter, type WorkRequest, type WorkRequestPhoto, type RoundConclusion } from './types';
 
 interface ReportData {
   date: string;
@@ -14,6 +14,7 @@ interface ReportData {
   workRequestPhotoUrls: Record<string, string>;
   schedules: { id: string; machine_id: string; shift_number: number; round_number: number }[];
   scheduleParameters: { schedule_id: string; parameter_id: string; sort_order: number; depends_on_parameter_id: string | null; depends_on_value: string | null }[];
+  roundConclusions: RoundConclusion[];
   machineFilter: string | null;
   shiftFilter: number | null;
 }
@@ -77,7 +78,7 @@ function getImageSize(dataUrl: string): Promise<{ w: number; h: number }> {
 }
 
 export async function generateReportPDF(data: ReportData) {
-  const { date, rounds, values, photos, photoUrls, parameters, workRequests, workRequestPhotos, workRequestPhotoUrls, schedules, scheduleParameters, machineFilter, shiftFilter } = data;
+  const { date, rounds, values, photos, photoUrls, parameters, workRequests, workRequestPhotos, workRequestPhotoUrls, schedules, scheduleParameters, roundConclusions, machineFilter, shiftFilter } = data;
   const doc = new jsPDF('l', 'mm', 'a4');
   const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight(), m = 8;
   const bottomLimit = h - 12;
@@ -299,10 +300,12 @@ export async function generateReportPDF(data: ReportData) {
     cursorY = doc.lastAutoTable.finalY + 5;
   }
 
-  // ---- Komentar / Kesimpulan Round: round-level conclusions entered at the bottom of the
-  //      New Monitoring form, listed independently of the machine matrix above ----
-  const commentedRounds = rounds.filter((r) => r.round_comment && r.round_comment.trim());
-  if (commentedRounds.length) {
+  // ---- Komentar / Kesimpulan Round: one conclusion per (shift, round), covering the whole
+  //      round across all machines. Stored in `round_conclusions`, independent of machines ----
+  const conclusions = (roundConclusions || [])
+    .filter((c) => c.comment && c.comment.trim())
+    .filter((c) => !shiftFilter || c.shift_number === shiftFilter);
+  if (conclusions.length) {
     ensureSpace(12);
     doc.setFillColor(231, 244, 253);
     doc.rect(m, cursorY, w - m * 2, 6, 'F');
@@ -310,20 +313,20 @@ export async function generateReportPDF(data: ReportData) {
     doc.text('KOMENTAR / KESIMPULAN ROUND', m + 2, cursorY + 4.2);
     cursorY += 8;
 
-    const commentBody = commentedRounds
-      .sort((a, b) => a.machine_name.localeCompare(b.machine_name) || a.shift_number - b.shift_number || a.round_number - b.round_number)
-      .map((r) => [r.machine_name, `Shift ${r.shift_number} R${r.round_number}`, r.technician_name, r.round_comment!.trim()]);
+    const conclusionBody = conclusions
+      .sort((a, b) => a.shift_number - b.shift_number || a.round_number - b.round_number)
+      .map((c) => [`Shift ${c.shift_number} - Round ${c.round_number}`, c.technician_name || '-', c.comment.trim()]);
 
     ensureSpace(14);
     autoTable(doc, {
       startY: cursorY,
-      head: [['MESIN', 'SHIFT / ROUND', 'TEKNISI', 'KOMENTAR / KESIMPULAN']],
-      body: commentBody,
+      head: [['SHIFT / ROUND', 'TEKNISI', 'KOMENTAR / KESIMPULAN']],
+      body: conclusionBody,
       theme: 'grid',
       margin: { left: m, right: m },
       styles: { fontSize: 6.5, cellPadding: 1.6, overflow: 'linebreak', valign: 'top' },
       headStyles: { fillColor: [18, 79, 121], textColor: 255, fontSize: 6.3, cellPadding: 1.5, halign: 'center' },
-      columnStyles: { 0: { cellWidth: 70 }, 1: { cellWidth: 30, halign: 'center' }, 2: { cellWidth: 46 } },
+      columnStyles: { 0: { cellWidth: 40, halign: 'center' }, 1: { cellWidth: 50 } },
     });
     // @ts-expect-error jspdf-autotable augments doc at runtime
     cursorY = doc.lastAutoTable.finalY + 5;

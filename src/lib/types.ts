@@ -58,9 +58,20 @@ export interface MonitoringRound {
   monitoring_date: string;
   status: RoundStatus;
   notes: string | null;
-  round_comment: string | null;
   created_at: string;
   completed_at: string | null;
+}
+
+export interface RoundConclusion {
+  id: string;
+  monitoring_date: string;
+  shift_number: number;
+  round_number: number;
+  comment: string;
+  technician_id: string | null;
+  technician_name: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export type ValueStatus = 'normal' | 'warning' | 'abnormal';
