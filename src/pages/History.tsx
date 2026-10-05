@@ -160,8 +160,7 @@ export default function History({}: HistoryProps) {
     }
     setEditValues(draft);
     setEditGeneralNotes(selectedRound.notes || '');
-    setEditRoundComment(selectedRound.round_comment || '');
-    setEdititing(true);
+    setIsEditing(true);
   }
 
   function cancelEdit() {
@@ -203,9 +202,7 @@ export default function History({}: HistoryProps) {
       }
 
       const nextGeneralNotes = editGeneralNotes.trim() || null;
-      const nextRoundComment = editRoundComment.trim() || null;
       const { error: roundError } = await supabase
-        .fro{ error: roundError } = await supabase
         .from('monitoring_rounds')
         .update({ notes: nextGeneralNotes, completed_at: new Date().toISOString() })
         .eq('id', selectedRound.id);
@@ -221,7 +218,9 @@ export default function History({}: HistoryProps) {
       });
 
       setSelectedRound({ ...selectedRound, values: updatedValues, notes: nextGeneralNotes });
-      setRounds((prev) => prev.map((r) => (r.id === selectedRound.id ? { ...r, notes: nextGeneralNotes
+      setRounds((prev) => prev.map((r) => (r.id === selectedRound.id ? { ...r, notes: nextGeneralNotes } : r)));
+      setIsEditing(false);
+    } catch (err: any) {
       setEditError(err?.message || 'Gagal menyimpan perubahan monitoring.');
     } finally {
       setEditSaving(false);
