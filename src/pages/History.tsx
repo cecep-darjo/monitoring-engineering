@@ -24,6 +24,7 @@ import {
   type MonitoringPhoto,
   type Machine,
   type Parameter,
+  type RoundConclusion,
 } from '@/lib/types';
 
 interface HistoryProps {
@@ -48,6 +49,7 @@ export default function History({}: HistoryProps) {
   const [editError, setEditError] = useState<string | null>(null);
   const [editGeneralNotes, setEditGeneralNotes] = useState('');
   const [editValues, setEditValues] = useState<Record<string, { value: string; notes: string }>>({});
+  const [roundConclusion, setRoundConclusion] = useState('');
 
   // Filters
   const [search, setSearch] = useState('');
@@ -126,6 +128,17 @@ export default function History({}: HistoryProps) {
     };
     setSelectedRound(detail);
     setEditGeneralNotes(detail.notes || '');
+
+    // Load the shared round conclusion for this (date, shift, round).
+    const { data: concl } = await supabase
+      .from('round_conclusions')
+      .select('*')
+      .eq('monitoring_date', round.monitoring_date)
+      .eq('shift_number', round.shift_number)
+      .eq('round_number', round.round_number)
+      .maybeSingle();
+    const conclRow = concl as RoundConclusion | null;
+    setRoundConclusion(conclRow?.comment || '');
 
     const ids = Array.from(new Set((values || []).map((v: any) => v.parameter_id).filter(Boolean)));
     if (ids.length > 0) {
@@ -207,6 +220,24 @@ export default function History({}: HistoryProps) {
         .update({ notes: nextGeneralNotes, completed_at: new Date().toISOString() })
         .eq('id', selectedRound.id);
       if (roundError) throw roundError;
+
+      // Save the shared round conclusion (upsert so it stays one row per round).
+      const conclusionText = roundConclusion.trim();
+      const { error: conclError } = await supabase
+        .from('round_conclusions')
+        .upsert(
+          {
+            monitoring_date: selectedRound.monitoring_date,
+            shift_number: selectedRound.shift_number,
+            round_number: selectedRound.round_number,
+            comment: conclusionText,
+            technician_id: profile?.id || null,
+            technician_name: profile?.full_name || selectedRound.technician_name,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'monitoring_date,shift_number,round_number' }
+        );
+      if (conclError) throw conclError;
 
       const updatedValues = selectedRound.values.map((v) => {
         const draft = editValues[v.id];
@@ -530,6 +561,29 @@ export default function History({}: HistoryProps) {
                   </p>
                 ) : (
                   <p className="text-sm text-slate-400">Tidak ada catatan umum.</p>
+                )}
+              </div>
+
+              {/* Kesimpulan Round (shared per shift/round) */}
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-1">Kesimpulan Round</h3>
+                <p className="text-xs text-slate-400 mb-2">
+                  Kesimpulan bersama untuk {SHIFT_SHORT[selectedRound.shift_number]} Round {selectedRound.round_number} ({new Date(selectedRound.monitoring_date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}), berlaku untuk seluruh mesin pada round ini.
+                </p>
+                {isEditing ? (
+                  <textarea
+                    rows={3}
+                    value={roundConclusion}
+                    onChange={(e) => setRoundConclusion(e.target.value)}
+                    className="input-field resize-none text-sm"
+                    placeholder="Tulis kesimpulan pemantauan untuk round ini (opsional). Akan muncul di laporan PDF..."
+                  />
+                ) : roundConclusion.trim() ? (
+                  <p className="text-sm text-slate-600 p-3 rounded-lg bg-slate-50">
+                    {roundConclusion}
+                  </p>
+                ) : (
+                  <p className="text-sm text-slate-400">Tidak ada kesimpulan round.</p>
                 )}
               </div>
 
