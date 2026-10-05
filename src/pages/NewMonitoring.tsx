@@ -429,7 +429,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     });
     if (decreasedParam) {
       setError(
-        `Nilai "${decreasedParam.parameter.name}" (${decreasedParam.value}) lebih kecil dari entry sebelumnya (${previousValues[decreasedParam.parameter.id]}). Parameter ini tidak boleh menurun.`
+        `Nilai "${decreasedParam.parameter.name}" (${decreasedParam.value}) lebih kecil dari entry sebelumnya (${previousValues[decreasedParam.parameter.id]}). Nilai harus sama dengan sebelumnya atau naik (tidak boleh turun).`
       );
       return;
     }
@@ -911,7 +911,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
                       </div>
                       {p.parameter.must_increase && previousValues[p.parameter.id] !== undefined && (
                         <p className="text-[11px] text-slate-400 mt-1">
-                          Entry sebelumnya: <b>{previousValues[p.parameter.id]}{p.parameter.unit ? ` ${p.parameter.unit}` : ''}</b> — nilai baru harus &ge; ini
+                          Entry sebelumnya: <b>{previousValues[p.parameter.id]}{p.parameter.unit ? ` ${p.parameter.unit}` : ''}</b> — nilai baru boleh sama atau &ge; ini (tidak boleh turun)
                         </p>
                       )}
                     </div>

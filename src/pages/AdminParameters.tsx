@@ -207,7 +207,7 @@ export default function AdminParameters() {
                     <span className="badge bg-amber-50 text-amber-700 border-amber-200">Wajib Foto</span>
                   )}
                   {param.must_increase && (
-                    <span className="badge bg-blue-50 text-blue-700 border-blue-200">Harus Naik</span>
+                    <span className="badge bg-blue-50 text-blue-700 border-blue-200">Sama / Naik</span>
                   )}
                   {param.show_minus_button && (
                     <span className="badge bg-purple-50 text-purple-700 border-purple-200">Tombol -</span>
@@ -348,7 +348,7 @@ export default function AdminParameters() {
                 </p>
                 {type === 'number' && (
                   <p className="text-xs text-slate-400 pl-6">
-                    "Nilai Harus Selalu Naik": entry baru akan DITOLAK kalau nilainya lebih kecil dari entry terakhir untuk parameter ini di mesin yang sama. Cocok untuk parameter akumulatif seperti running hours / counter.
+                    "Nilai Sama / Naik": nilai baru boleh SAMA atau NAIK, dan DITOLAK kalau nilainya lebih kecil dari entry terakhir untuk parameter ini di mesin yang sama. Cocok untuk parameter akumulatif seperti running hours / counter.
                   </p>
                 )}
                 {type === 'number' && (
