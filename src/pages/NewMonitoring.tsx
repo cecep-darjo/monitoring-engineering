@@ -65,6 +65,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     return local.toISOString().split('T')[0];
   });
   const [generalNotes, setGeneralNotes] = useState('');
+  const [roundComment, setRoundComment] = useState('');
   const [params, setParams] = useState<ParamWithValue[]>([]);
   const [previousValues, setPreviousValues] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -218,6 +219,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       existingValues = data || [];
       setEditingRoundId(existingRound.id);
       setGeneralNotes(existingRound.notes || '');
+      setRoundComment(existingRound.round_comment || '');
 
       const { data: photoData } = await supabase
         .from('monitoring_photos')
@@ -230,6 +232,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     } else {
       setEditingRoundId(null); setGeneralNotes('');
     }
+    setRoundComment(existingRound?.round_comment || '');
     setDeletedPhotos([]);
 
     const items: ParamWithValue[] = (spData || []).filter((sp: any) => sp.parameter).map((sp: any) => {
@@ -414,7 +417,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       let roundId = editingRoundId;
       if (roundId) {
         const { error } = await supabase.from('monitoring_rounds').update({
-          notes: generalNotes || null, completed_at: new Date().toISOString(), technician_id: profile.id, technician_name: profile.full_name
+          notes: generalNotes || null, round_comment: roundComment || null, completed_at: new Date().toISOString(), technician_id: profile.id, technician_name: profile.full_name
         }).eq('id', roundId);
         if (error) throw error;
         const { error: deleteError } = await supabase.from('monitoring_values').delete().eq('round_id', roundId);
@@ -423,7 +426,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
         const { data: roundData, error: roundError } = await supabase.from('monitoring_rounds').insert({
           technician_id: profile.id, technician_name: profile.full_name, machine_id: selectedMachine.id,
           machine_name: selectedMachine.name, shift_number: shiftNumber, round_number: roundNumber,
-          monitoring_date: monitoringDate, status: 'completed', notes: generalNotes || null, completed_at: new Date().toISOString(),
+          monitoring_date: monitoringDate, status: 'completed', notes: generalNotes || null, round_comment: roundComment || null, completed_at: new Date().toISOString(),
         }).select().single();
         if (roundError) throw roundError;
         roundId = roundData.id;
@@ -473,6 +476,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
     setSelectedMachine(null);
     setParams([]);
     setGeneralNotes('');
+    setRoundComment('');
     setSuccess(false);
     setError(null);
     setDeletedPhotos([]);
@@ -924,6 +928,18 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
                   onChange={(e) => setGeneralNotes(e.target.value)}
                   rows={3}
                   placeholder="Any additional observations about this monitoring round..."
+                  className="input-field resize-none"
+                />
+              </div>
+
+              {/* Round Comment */}
+              <div className="card p-5">
+                <label className="label-text">Comment (Optional)</label>
+                <textarea
+                  value={roundComment}
+                  onChange={(e) => setRoundComment(e.target.value)}
+                  rows={3}
+                  placeholder="Komentar untuk round ini (opsional). Komentar akan muncul di laporan PDF..."
                   className="input-field resize-none"
                 />
               </div>

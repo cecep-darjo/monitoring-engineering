@@ -255,6 +255,29 @@ export async function generateReportPDF(data: ReportData) {
       statusGrid.push(rowStatus);
     }
 
+    // "Komentar Round" row: shows the optional per-round comment entered for this machine,
+    // placed beside the shift/round slot it belongs to.
+    const commentRow = ['Komentar Round', '', ''];
+    const commentRowStatus: string[] = [];
+    let hasComment = false;
+    for (const slot of slots) {
+      const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
+      const comment = round?.round_comment?.trim();
+      if (comment) {
+        commentRow.push(comment);
+        commentRowStatus.push('comment');
+        hasComment = true;
+      } else {
+        commentRow.push('');
+        commentRowStatus.push('na');
+      }
+    }
+    commentRow.push('');
+    if (hasComment) {
+      body.push(commentRow);
+      statusGrid.push(commentRowStatus);
+    }
+
     ensureSpace(14);
     autoTable(doc, {
       startY: cursorY,
@@ -283,6 +306,10 @@ export async function generateReportPDF(data: ReportData) {
             c.cell.styles.fillColor = [234, 244, 252];
             c.cell.styles.textColor = [12, 58, 89];
             c.cell.styles.fontStyle = 'bold';
+          } else if (status === 'comment') {
+            c.cell.styles.fillColor = [236, 253, 245];
+            c.cell.styles.textColor = [6, 78, 59];
+            c.cell.styles.fontStyle = 'italic';
           } else if (STATUS_COLOR[status]) {
             c.cell.styles.textColor = STATUS_COLOR[status];
             c.cell.styles.fontStyle = 'bold';

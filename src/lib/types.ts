@@ -58,6 +58,7 @@ export interface MonitoringRound {
   monitoring_date: string;
   status: RoundStatus;
   notes: string | null;
+  round_comment: string | null;
   created_at: string;
   completed_at: string | null;
 }
