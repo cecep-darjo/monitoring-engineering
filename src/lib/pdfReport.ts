@@ -255,29 +255,6 @@ export async function generateReportPDF(data: ReportData) {
       statusGrid.push(rowStatus);
     }
 
-    // "Komentar Round" row: shows the optional per-round comment entered for this machine,
-    // placed beside the shift/round slot it belongs to.
-    const commentRow = ['Komentar Round', '', ''];
-    const commentRowStatus: string[] = [];
-    let hasComment = false;
-    for (const slot of slots) {
-      const round = roundBySlot.get(`${machineId}|${slot.shift}|${slot.round}`);
-      const comment = round?.round_comment?.trim();
-      if (comment) {
-        commentRow.push(comment);
-        commentRowStatus.push('comment');
-        hasComment = true;
-      } else {
-        commentRow.push('');
-        commentRowStatus.push('na');
-      }
-    }
-    commentRow.push('');
-    if (hasComment) {
-      body.push(commentRow);
-      statusGrid.push(commentRowStatus);
-    }
-
     ensureSpace(14);
     autoTable(doc, {
       startY: cursorY,
@@ -306,10 +283,6 @@ export async function generateReportPDF(data: ReportData) {
             c.cell.styles.fillColor = [234, 244, 252];
             c.cell.styles.textColor = [12, 58, 89];
             c.cell.styles.fontStyle = 'bold';
-          } else if (status === 'comment') {
-            c.cell.styles.fillColor = [236, 253, 245];
-            c.cell.styles.textColor = [6, 78, 59];
-            c.cell.styles.fontStyle = 'italic';
           } else if (STATUS_COLOR[status]) {
             c.cell.styles.textColor = STATUS_COLOR[status];
             c.cell.styles.fontStyle = 'bold';
@@ -321,6 +294,36 @@ export async function generateReportPDF(data: ReportData) {
           c.cell.styles.fontStyle = 'bold';
         }
       },
+    });
+    // @ts-expect-error jspdf-autotable augments doc at runtime
+    cursorY = doc.lastAutoTable.finalY + 5;
+  }
+
+  // ---- Komentar / Kesimpulan Round: round-level conclusions entered at the bottom of the
+  //      New Monitoring form, listed independently of the machine matrix above ----
+  const commentedRounds = rounds.filter((r) => r.round_comment && r.round_comment.trim());
+  if (commentedRounds.length) {
+    ensureSpace(12);
+    doc.setFillColor(231, 244, 253);
+    doc.rect(m, cursorY, w - m * 2, 6, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(18, 79, 121);
+    doc.text('KOMENTAR / KESIMPULAN ROUND', m + 2, cursorY + 4.2);
+    cursorY += 8;
+
+    const commentBody = commentedRounds
+      .sort((a, b) => a.machine_name.localeCompare(b.machine_name) || a.shift_number - b.shift_number || a.round_number - b.round_number)
+      .map((r) => [r.machine_name, `Shift ${r.shift_number} R${r.round_number}`, r.technician_name, r.round_comment!.trim()]);
+
+    ensureSpace(14);
+    autoTable(doc, {
+      startY: cursorY,
+      head: [['MESIN', 'SHIFT / ROUND', 'TEKNISI', 'KOMENTAR / KESIMPULAN']],
+      body: commentBody,
+      theme: 'grid',
+      margin: { left: m, right: m },
+      styles: { fontSize: 6.5, cellPadding: 1.6, overflow: 'linebreak', valign: 'top' },
+      headStyles: { fillColor: [18, 79, 121], textColor: 255, fontSize: 6.3, cellPadding: 1.5, halign: 'center' },
+      columnStyles: { 0: { cellWidth: 70 }, 1: { cellWidth: 30, halign: 'center' }, 2: { cellWidth: 46 } },
     });
     // @ts-expect-error jspdf-autotable augments doc at runtime
     cursorY = doc.lastAutoTable.finalY + 5;

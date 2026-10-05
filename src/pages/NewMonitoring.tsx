@@ -934,12 +934,12 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
 
               {/* Round Comment */}
               <div className="card p-5">
-                <label className="label-text">Comment (Optional)</label>
+                <label className="label-text">Comment / Kesimpulan (Optional)</label>
                 <textarea
                   value={roundComment}
                   onChange={(e) => setRoundComment(e.target.value)}
                   rows={3}
-                  placeholder="Komentar untuk round ini (opsional). Komentar akan muncul di laporan PDF..."
+                  placeholder="Komentar atau kesimpulan pemantauan untuk round ini (opsional). Akan muncul di laporan PDF..."
                   className="input-field resize-none"
                 />
               </div>
