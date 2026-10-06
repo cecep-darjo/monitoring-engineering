@@ -50,11 +50,11 @@ Lalu edit `.env.local-proxy` (nilai default dari contoh):
 SUPABASE_URL=https://xzyglfiecvmwsatpiemy.supabase.co
 ANON_KEY=sb_publishable_LfhqaupabddAgKjtTbzNAQ_uFpQ83Pr
 HOST=0.0.0.0
-PORT=400
+PORT=4000
 ```
 
 - `HOST=0.0.0.0` berarti didengar di semua antarmuka (wajib agar terjangkau LAN).
-- `PORT=400` port prost. Bisa diganti (mis. 80 jika ingin tanpa port di URL).
+- `PORT=4000` port prost. Bisa diganti (mis. 80 jika ingin tanpa port di URL).
 
 ## 2) Bangun aplikasi dalam mode local-proxy
 
@@ -77,7 +77,7 @@ File itu otomatis:
 - membuat salinan `.env.local-proxy` dari contoh bila belum ada,
 - memasang dependensi bila belum ada,
 - membangun `dist/` bila belum ada,
-- lalu menjalankan proxy pada port yang dibaca dari `.env.local-proxy` (default `400`).
+- lalu menjalankan proxy pada port yang dibaca dari `.env.local-proxy` (default `4000`).
 
 Atau secara manual (di PowerShell):
 ```
@@ -90,7 +90,7 @@ node server/proxy-server.mjs
 
 Anda akan melihat ringkasan seperti:
 ```
-  Proxy listen: http://0.0.0.0:400
+  Proxy listen: http://0.0.0.0:4000
 ```
 
 ## 4) Biarkan komputer lain mengakses
@@ -101,7 +101,7 @@ Anda akan melihat ringkasan seperti:
 - Di komputer lain (tanpa internet), buka browser dan akses:
 
   ```
-  http://192.168.1.50:400
+  http://192.168.1.50:4000
   ```
 
   (ganti IP dan port sesuai milik Anda).
@@ -110,7 +110,7 @@ Anda akan melihat ringkasan seperti:
 
 | Gejala | Penyebab / Solusi |
 |---|---|
-| Halaman tidak terbuka di komputer lain | Firewall Windows memblokir port. Buka port TCP 400 (atau port yang dipakai) di Windows Firewall, atau gunakan `netsh advfirewall firewall add rule name="monitor-proxy" dir=in action=allow protocol=TCP localport=400`. |
+| Halaman tidak terbuka di komputer lain | Firewall Windows memblokir port. Buka port TCP 4000 (atau port yang dipakai) di Windows Firewall, atau gunakan `netsh advfirewall firewall add rule name="monitor-proxy" dir=in action=allow protocol=TCP localport=4000`. |
 | Login gagal / data kosong | Pastikan `.env.local-proxy` benar dan proxy berhasil terkoneksi. Cek log terminal proxy untuk error backend. |
 | Foto tidak tampil | Beberapa bucket storage perlu akses anon. Pastikan `ANON_KEY` benar di `.env.local-proxy`. |
 | Port sudah terpakai | Ganti `PORT` di `.env.local-proxy`, lalu jalankan ulang. |

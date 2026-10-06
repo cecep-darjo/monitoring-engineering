@@ -22,8 +22,8 @@ if not exist ".env.local-proxy" (
   echo     Silakan isi SUPABASE_URL dan ANON_KEY di .env.local-proxy.
 )
 
-REM --- Baca PORT dari .env.local-proxy (default 400) ---
-set "PORT=400"
+REM --- Baca PORT dari .env.local-proxy (default 4000) ---
+set "PORT=4000"
 for /f "usebackq tokens=1,* delims==" %%a in (".env.local-proxy") do (
   set "_line=%%a"
   if /i "!_line!"=="PORT" set "PORT=%%b"

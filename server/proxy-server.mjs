@@ -43,7 +43,7 @@ if (fs.existsSync(envFile)) {
 // KONFIGURASI (via environment variables)
 // ---------------------------------------------------------------------------
 const HOST = process.env.HOST || '0.0.0.0';               // 0.0.0.0 = bisa diakses dari LAN
-const PORT = parseInt(process.env.PORT || '400', 10);     // port proxy (default 400)
+const PORT = parseInt(process.env.PORT || '4000', 10);    // port proxy (default 4000)
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
 const ANON_KEY = (process.env.ANON_KEY || '').trim();     // Supabase anon key (untuk fallback header)
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(__dirname, '..', 'dist');
