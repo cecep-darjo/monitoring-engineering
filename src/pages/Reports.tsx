@@ -135,7 +135,7 @@ export default function Reports() {
     setSendingEmail(true);
     setEmailResult(null);
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-shift-report`;
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/send-shift-report`;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {

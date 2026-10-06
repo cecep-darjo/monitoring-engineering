@@ -125,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (username: string, password: string, fullName: string) => {
     // Call edge function which uses service role key to bypass password strength check
-    const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`;
+    const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/create-user`;
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {

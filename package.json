@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "build:proxy": "powershell -ExecutionPolicy Bypass -File server/build-local-proxy.ps1",
+    "start:proxy": "node server/proxy-server.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

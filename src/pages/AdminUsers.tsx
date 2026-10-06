@@ -104,7 +104,7 @@ export default function AdminUsers() {
         }
 
         // Call edge function which uses service role key to bypass password strength check
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`;
+        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/create-user`;
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -174,7 +174,7 @@ export default function AdminUsers() {
 
     setDeletingId(user.id);
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`;
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/delete-user`;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
