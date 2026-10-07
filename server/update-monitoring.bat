@@ -16,6 +16,26 @@ echo ============================================================
 echo   EQUIPMENT MONITOR - UPDATE APPLICATION
 echo ============================================================
 
+REM --- Temukan Node.js & npm (path absolut) ---
+set "NODE="
+if exist "%ProgramFiles%\nodejs\node.exe"      set "NODE=%ProgramFiles%\nodejs\node.exe"
+if not defined NODE if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "NODE=%ProgramFiles(x86)%\nodejs\node.exe"
+if not defined NODE (
+  where node >nul 2>nul
+  if not errorlevel 1 (
+    for /f "delims=" %%i in ('where node') do if not defined NODE set "NODE=%%i"
+  )
+)
+if not defined NODE (
+  echo [X] Node.js TIDAK ditemukan. Install dari https://nodejs.org lalu jalankan lagi.
+  pause
+  exit /b 1
+)
+set "NPM="
+for %%p in ("%ProgramFiles%\nodejs\npm.cmd" "%ProgramFiles(x86)%\nodejs\npm.cmd") do if exist %%~p if not defined NPM set "NPM=%%~p"
+if not defined NPM set "NPM=call npm"
+echo [OK] Node.js: %NODE%
+
 REM --- Cek apakah repo git ---
 if exist ".git" (
   echo [1/3] Mengambil update dari git...
@@ -32,7 +52,11 @@ if exist ".git" (
 
 echo.
 echo [2/3] Memasang dependensi...
-call npm install
+if /i "%NPM%"=="call npm" (
+  call npm install
+) else (
+  "%NPM%" install
+)
 if errorlevel 1 (
   echo [X] Gagal npm install.
   pause
@@ -41,7 +65,7 @@ if errorlevel 1 (
 
 echo.
 echo [3/3] Membangun ulang aplikasi (mode local-proxy)...
-call powershell -ExecutionPolicy Bypass -File "server\build-local-proxy.ps1"
+powershell -ExecutionPolicy Bypass -File "server\build-local-proxy.ps1"
 if errorlevel 1 (
   echo [X] Gagal build. Periksa error lalu jalankan lagi.
   pause
