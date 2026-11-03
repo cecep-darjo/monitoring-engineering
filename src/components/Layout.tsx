@@ -16,6 +16,7 @@ import {
   ClipboardList,
   History as HistoryIcon2,
   TrendingUp,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import interbatLogo from '@/assets/interbat-logo.png';
@@ -28,6 +29,7 @@ export type PageKey =
   | 'trend-analysis'
   | 'work-requests'
   | 'admin-machines'
+  | 'admin-holiday-machines'
   | 'admin-parameters'
   | 'admin-schedules'
   | 'admin-users'
@@ -49,6 +51,7 @@ const navItems: NavItem[] = [
   { key: 'trend-analysis', label: 'Trend Parameter', icon: TrendingUp },
   { key: 'work-requests', label: 'Titipan Pekerjaan', icon: ClipboardList },
   { key: 'admin-machines', label: 'Machines', icon: Cog, adminOnly: true },
+  { key: 'admin-holiday-machines', label: 'Machine For Holiday', icon: CalendarDays, adminOnly: true },
   { key: 'admin-parameters', label: 'Parameters', icon: Settings, adminOnly: true },
   { key: 'admin-schedules', label: 'Schedules', icon: CalendarClock, adminOnly: true },
   { key: 'admin-users', label: 'Users', icon: Users, adminOnly: true },

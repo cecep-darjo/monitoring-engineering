@@ -1,0 +1,22 @@
+MONITORING ENGINEERING - PAKET PROXY LOKAL
+==========================================
+Isi paket sudah siap pakai (aplikasi sudah di-build, konfigurasi sudah terisi).
+Yang dibutuhkan hanya Node.js (LTS) di komputer PROXY (yang punya internet).
+
+LANGKAH
+1. Extract folder ini di komputer yang punya internet.
+2. Klik dua kali JALANKAN.bat. Catat alamat IP yang tampil (contoh http://192.168.1.50:4000).
+3. Di komputer lain (tanpa internet, satu jaringan LAN), buka alamat itu di browser.
+
+JIKA KOMPUTER LAIN TIDAK BISA MEMBUKA
+Buka port 4000 di Windows Firewall. Jalankan CMD sebagai Administrator:
+  netsh advfirewall firewall add rule name="monitor-proxy" dir=in action=allow protocol=TCP localport=4000
+
+UBAH PORT / PROJECT SUPABASE
+Edit .env.local-proxy (simpan sebagai UTF-8 tanpa BOM). Ubah PORT atau SUPABASE_URL
+dan jalankan ulang. Jika ANON_KEY diganti, aplikasi harus di-build ulang
+(kunci ditanam ke dalam dist/).
+
+CATATAN
+- Komputer proxy harus menyala dan JALANKAN.bat harus tetap berjalan selama dipakai.
+- Jaringan LAN tepercaya saja; proxy meneruskan kredensial ke Supabase.

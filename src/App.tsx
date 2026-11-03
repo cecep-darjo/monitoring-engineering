@@ -7,6 +7,7 @@ import NewMonitoring from '@/pages/NewMonitoring';
 import History from '@/pages/History';
 import Reports from '@/pages/Reports';
 import AdminMachines from '@/pages/AdminMachines';
+import AdminHolidayMachines from '@/pages/AdminHolidayMachines';
 import AdminParameters from '@/pages/AdminParameters';
 import AdminSchedules from '@/pages/AdminSchedules';
 import AdminUsers from '@/pages/AdminUsers';
@@ -37,6 +38,7 @@ function AppContent() {
   if (
     !isAdmin &&
     (page === 'admin-machines' ||
+      page === 'admin-holiday-machines' ||
       page === 'admin-parameters' ||
       page === 'admin-schedules' ||
       page === 'admin-users' ||
@@ -70,6 +72,7 @@ function AppContent() {
       {currentPage === 'report' && <Reports />}
       {currentPage === 'trend-analysis' && <TrendAnalysis />}
       {currentPage === 'admin-machines' && isAdmin && <AdminMachines />}
+      {currentPage === 'admin-holiday-machines' && isAdmin && <AdminHolidayMachines />}
       {currentPage === 'admin-parameters' && isAdmin && <AdminParameters />}
       {currentPage === 'admin-schedules' && isAdmin && <AdminSchedules />}
       {currentPage === 'admin-users' && isAdmin && <AdminUsers />}

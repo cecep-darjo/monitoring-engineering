@@ -8,8 +8,9 @@ import {
   Settings,
   Search,
   MapPin,
-  CheckCircle2,
   XCircle,
+  Power,
+  PowerOff,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Machine, Parameter, MachineParameter } from '@/lib/types';
@@ -32,7 +33,6 @@ export default function AdminMachines() {
   const [code, setCode] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
-  const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +74,6 @@ export default function AdminMachines() {
     setCode('');
     setLocation('');
     setDescription('');
-    setIsActive(true);
     setError(null);
     setShowForm(true);
   }
@@ -85,7 +84,6 @@ export default function AdminMachines() {
     setCode(machine.code);
     setLocation(machine.location || '');
     setDescription(machine.description || '');
-    setIsActive(machine.is_active);
     setError(null);
     setShowForm(true);
   }
@@ -103,7 +101,6 @@ export default function AdminMachines() {
       code: code.trim().toUpperCase(),
       location: location.trim() || null,
       description: description.trim() || null,
-      is_active: isActive,
     };
 
     if (editing) {
@@ -132,6 +129,16 @@ export default function AdminMachines() {
       return;
     }
     await loadMachines();
+  }
+
+  async function toggleMachineActive(machine: Machine) {
+    const next = !machine.is_active;
+    const { error: err } = await supabase.from('machines').update({ is_active: next }).eq('id', machine.id);
+    if (err) {
+      alert(err.message);
+      return;
+    }
+    setMachines((current) => current.map((item) => item.id === machine.id ? { ...item, is_active: next } : item));
   }
 
   async function openParams(machine: Machine) {
@@ -237,55 +244,38 @@ export default function AdminMachines() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredMachines.map((machine) => (
-            <div key={machine.id} className="card p-5">
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                  <Cog className="w-5 h-5 text-slate-600" />
-                </div>
-                <span
-                  className={`badge ${
-                    machine.is_active
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-100 text-slate-500 border-slate-200'
-                  }`}
-                >
-                  {machine.is_active ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-              <h3 className="font-semibold text-slate-900 text-sm">{machine.name}</h3>
-              <p className="text-xs text-slate-400 mt-1">{machine.code}</p>
-              {machine.location && (
-                <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {machine.location}
-                </p>
-              )}
-              {machine.description && (
-                <p className="text-xs text-slate-400 mt-2 line-clamp-2">{machine.description}</p>
-              )}
-              <div className="flex items-center gap-2 mt-3 text-xs text-slate-400">
-                <Settings className="w-3.5 h-3.5" />
-                {machine.paramCount || 0} parameters
-              </div>
-              <div className="flex gap-2 mt-4">
-                <button
-                  onClick={() => openParams(machine)}
-                  className="btn-ghost text-xs flex-1 border border-slate-200"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  Parameters
-                </button>
-                <button onClick={() => openEdit(machine)} className="btn-ghost text-xs border border-slate-200 px-2.5">
-                  <Edit2 className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => handleDelete(machine)} className="btn-ghost text-xs border border-slate-200 px-2.5 text-red-500 hover:bg-red-50">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr><th className="px-5 py-3">Machine</th><th className="px-5 py-3">Location</th><th className="px-5 py-3">Parameters</th><th className="px-5 py-3 text-right">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredMachines.map((machine) => (
+                  <tr key={machine.id} className="hover:bg-slate-50/70">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100"><Cog className="h-4 w-4 text-slate-600" /></div>
+                        <div className="min-w-0"><div className="font-medium text-slate-900">{machine.name}</div><div className="text-xs text-slate-400">{machine.code}</div></div>
+                        <button onClick={() => void toggleMachineActive(machine)} title={machine.is_active ? 'Deactivate machine' : 'Activate machine'} className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${machine.is_active ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                          {machine.is_active ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}
+                          {machine.is_active ? 'Active' : 'Inactive'}
+                        </button>
+                      </div>
+                      {machine.description && <p className="ml-12 mt-1 line-clamp-1 text-xs text-slate-400">{machine.description}</p>}
+                    </td>
+                    <td className="px-5 py-4 text-slate-500">{machine.location ? <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{machine.location}</span> : '—'}</td>
+                    <td className="px-5 py-4 text-slate-500">{machine.paramCount || 0}</td>
+                    <td className="px-5 py-4"><div className="flex justify-end gap-2">
+                      <button onClick={() => openParams(machine)} className="btn-ghost border border-slate-200 px-2.5 text-xs"><Settings className="h-3.5 w-3.5" /> Parameters</button>
+                      <button onClick={() => openEdit(machine)} title="Edit machine" className="btn-ghost border border-slate-200 px-2.5"><Edit2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => handleDelete(machine)} title="Delete machine" className="btn-ghost border border-slate-200 px-2.5 text-red-500 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -316,10 +306,6 @@ export default function AdminMachines() {
                 <label className="label-text">Description (optional)</label>
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="input-field resize-none" placeholder="Brief description of the machine..." />
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
-                <span className="text-sm text-slate-700">Active</span>
-              </label>
               {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
             </div>
             <div className="flex gap-3 px-6 py-4 border-t border-slate-200">
