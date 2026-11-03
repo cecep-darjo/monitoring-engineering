@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bell, Calendar, Camera, CheckCircle2, ChevronDown, ChevronUp, ClipboardList,
+  Calendar, Camera, CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Edit2,
   Clock3, Loader2, Plus, Trash2, User, X,
 } from 'lucide-react';
 import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
@@ -46,6 +46,12 @@ function localDateKey(value: string) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function effectiveStatus(item: WorkRequest, now = new Date()): WorkRequest['status'] {
+  const scheduledAt = scheduleDateTime(item);
+  if (item.status === 'pending' && scheduledAt && scheduledAt.getTime() <= now.getTime()) return 'in_progress';
+  return item.status;
+}
+
 export default function WorkRequests() {
   const { profile } = useAuth();
   const [items, setItems] = useState<WorkRequestWithPhotos[]>([]);
@@ -53,6 +59,8 @@ export default function WorkRequests() {
   const [showForm, setShowForm] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [completionId, setCompletionId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +73,11 @@ export default function WorkRequests() {
   const [roundNumber, setRoundNumber] = useState(1);
   const [workDetail, setWorkDetail] = useState('');
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const [editTitle, setEditTitle] = useState('');
+  const [editRequestedBy, setEditRequestedBy] = useState('');
+  const [editScheduledDate, setEditScheduledDate] = useState('');
+  const [editShiftNumber, setEditShiftNumber] = useState(1);
+  const [editRoundNumber, setEditRoundNumber] = useState(1);
   const [filter, setFilter] = useState<WorkFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [completedFrom, setCompletedFrom] = useState('');
@@ -72,6 +85,10 @@ export default function WorkRequests() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const interval = window.setInterval(() => setCurrentTime(new Date()), 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -165,6 +182,39 @@ export default function WorkRequests() {
     setBusyId(null);
   }
 
+  function beginEdit(item: WorkRequestWithPhotos) {
+    setExpandedId(item.id);
+    setEditingId(item.id);
+    setEditTitle(item.title);
+    setEditRequestedBy(item.requested_by);
+    setEditScheduledDate(item.scheduled_date || localDateInputValue());
+    setEditShiftNumber(item.shift_number || 1);
+    setEditRoundNumber(item.round_number || 1);
+    setActionError(null);
+  }
+
+  async function saveEdit(item: WorkRequestWithPhotos) {
+    if (!editTitle.trim() || !editRequestedBy.trim() || !editScheduledDate) {
+      setActionError('Judul, peminta, tanggal, shift, dan round wajib diisi.');
+      return;
+    }
+    setBusyId(item.id);
+    setActionError(null);
+    const { error: updateError } = await supabase.from('work_requests').update({
+      title: editTitle.trim(),
+      requested_by: editRequestedBy.trim(),
+      scheduled_date: editScheduledDate,
+      shift_number: editShiftNumber,
+      round_number: editRoundNumber,
+    }).eq('id', item.id);
+    if (updateError) setActionError(updateError.message);
+    else {
+      setEditingId(null);
+      await load();
+    }
+    setBusyId(null);
+  }
+
   async function completeWork(item: WorkRequestWithPhotos) {
     if (!workDetail.trim()) {
       setActionError('Detail pekerjaan yang sudah dikerjakan wajib diisi.');
@@ -234,15 +284,16 @@ export default function WorkRequests() {
   }
 
   const counts = useMemo(() => ({
-    in_progress: items.filter((item) => item.status === 'in_progress').length,
-    upcoming: items.filter((item) => item.status === 'pending').length,
+    in_progress: items.filter((item) => effectiveStatus(item, currentTime) === 'in_progress').length,
+    upcoming: items.filter((item) => effectiveStatus(item, currentTime) === 'pending').length,
     completed: items.filter((item) => item.status === 'completed').length,
-  }), [items]);
+  }), [items, currentTime]);
 
   const filteredItems = useMemo(() => {
     const rows = items.filter((item) => {
-      if (filter === 'in_progress' && item.status !== 'in_progress') return false;
-      if (filter === 'upcoming' && item.status !== 'pending') return false;
+      const status = effectiveStatus(item, currentTime);
+      if (filter === 'in_progress' && status !== 'in_progress') return false;
+      if (filter === 'upcoming' && status !== 'pending') return false;
       if (filter === 'completed' && item.status !== 'completed') return false;
       if (filter === 'completed' && (completedFrom || completedTo)) {
         const completedDate = localDateKey(item.completed_at || item.created_at);
@@ -260,7 +311,7 @@ export default function WorkRequests() {
         : (scheduleDateTime(b)?.getTime() ?? new Date(b.created_at).getTime());
       return sortOrder === 'newest' ? bDate - aDate : aDate - bDate;
     });
-  }, [items, filter, completedFrom, completedTo, sortOrder]);
+  }, [items, filter, completedFrom, completedTo, sortOrder, currentTime]);
 
   const canManage = (item: WorkRequest) => profile && (profile.role === 'admin' || profile.id === item.technician_id);
 
@@ -363,8 +414,9 @@ export default function WorkRequests() {
             const isExpanded = expandedId === item.id;
             const isCompleting = completionId === item.id;
             const scheduledAt = scheduleDateTime(item);
-            const statusLabel = item.status === 'completed' ? 'Selesai' : item.status === 'in_progress' ? 'Sedang berjalan' : 'Akan datang';
-            const statusClass = item.status === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : item.status === 'in_progress' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-amber-200 bg-amber-50 text-amber-700';
+            const displayStatus = effectiveStatus(item, currentTime);
+            const statusLabel = displayStatus === 'completed' ? 'Selesai' : displayStatus === 'in_progress' ? 'Sedang berjalan' : 'Akan datang';
+            const statusClass = displayStatus === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : displayStatus === 'in_progress' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-amber-200 bg-amber-50 text-amber-700';
             return (
               <div key={item.id} className="card overflow-hidden">
                 <div className="flex items-start gap-3 p-4">
@@ -380,13 +432,29 @@ export default function WorkRequests() {
                     </div>
                     {isExpanded ? <ChevronUp className="mt-1 h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-slate-400" />}
                   </button>
-                  {item.status === 'pending' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary shrink-0 px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock3 className="h-3.5 w-3.5" />} Mulai</button>}
+                  {item.status === 'pending' && displayStatus === 'pending' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary shrink-0 px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock3 className="h-3.5 w-3.5" />} Mulai</button>}
                   {item.status === 'in_progress' && <button onClick={() => { setExpandedId(item.id); setCompletionId(isCompleting ? null : item.id); if (!isCompleting) { setWorkDetail(item.description || ''); setEvidenceFiles([]); } setActionError(null); }} className="btn-primary shrink-0 px-3 py-2 text-xs"><CheckCircle2 className="h-3.5 w-3.5" /> Selesaikan</button>}
+                  {item.status === 'pending' && displayStatus === 'in_progress' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary shrink-0 px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Lengkapi</button>}
+                  <button onClick={() => editingId === item.id ? setEditingId(null) : beginEdit(item)} className="btn-ghost shrink-0 border border-slate-200 px-2.5 text-xs" title="Edit titipan"><Edit2 className="h-3.5 w-3.5" /> Edit</button>
                   {profile?.role === 'admin' && <button onClick={() => void handleDelete(item)} disabled={busyId === item.id} title="Hapus titipan" className="btn-ghost shrink-0 border border-red-200 px-2.5 text-xs text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>}
                 </div>
                 {isExpanded && (
                   <div className="space-y-3 border-t border-slate-100 px-4 pb-4 pt-3">
                     <div className="flex flex-wrap gap-4 text-xs text-slate-500"><span>Dibuat: {new Date(item.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>{scheduledAt && <span>Waktu mulai jadwal: {scheduledAt.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}</div>
+                    {editingId === item.id && (
+                      <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div><label className="label-text">Judul Pekerjaan</label><input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} className="input-field" /></div>
+                          <div><label className="label-text">Titipan dari</label><input value={editRequestedBy} onChange={(event) => setEditRequestedBy(event.target.value)} className="input-field" /></div>
+                          <div><label className="label-text">Tanggal</label><input type="date" value={editScheduledDate} onChange={(event) => setEditScheduledDate(event.target.value)} className="input-field" /></div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div><label className="label-text">Shift</label><select value={editShiftNumber} onChange={(event) => setEditShiftNumber(Number(event.target.value))} className="input-field"><option value={1}>Shift 1</option><option value={2}>Shift 2</option><option value={3}>Shift 3</option></select></div>
+                            <div><label className="label-text">Round</label><select value={editRoundNumber} onChange={(event) => setEditRoundNumber(Number(event.target.value))} className="input-field"><option value={1}>Round 1</option><option value={2}>Round 2</option></select></div>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2"><button onClick={() => setEditingId(null)} className="btn-ghost border border-slate-200">Batal</button><button onClick={() => void saveEdit(item)} disabled={busyId === item.id} className="btn-primary">{busyId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Simpan Perubahan</button></div>
+                      </div>
+                    )}
                     {item.description ? <div><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Detail pekerjaan</h3><p className="whitespace-pre-wrap text-sm text-slate-700">{item.description}</p></div> : <p className="text-sm italic text-slate-400">Detail pekerjaan diisi saat titipan diselesaikan.</p>}
                     {item.photos.length > 0 && <div><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Foto bukti</h3><div className="flex flex-wrap gap-2">{item.photos.map((photo) => <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer"><img src={photo.url} alt={photo.file_name || ''} className="h-24 w-24 rounded-lg border border-slate-200 object-cover hover:opacity-80" /></a>)}</div></div>}
                     {isCompleting && item.status === 'in_progress' && (
