@@ -19,7 +19,7 @@ export default function AdminHolidayMachines() {
     setLoading(true);
     setError(null);
     const [{ data: machineRows, error: machineError }, { data: settingRows, error: settingError }] = await Promise.all([
-      supabase.from('machines').select('*').order('name'),
+      supabase.from('machines').select('*').eq('machine_category', 'mfd').order('name'),
       supabase.from('holiday_machine_settings').select('machine_id, is_active'),
     ]);
     if (machineError || settingError) {
@@ -67,7 +67,7 @@ export default function AdminHolidayMachines() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Machine For Holiday (MFD)</h1>
-          <p className="mt-1 text-sm text-slate-500">Pilih mesin yang digunakan selama holiday. Status ini terpisah dari status Machine reguler.</p>
+          <p className="mt-1 text-sm text-slate-500">Mesin berbadge MFD yang dipilih di halaman Machines akan tampil di sini. Atur status aktifnya untuk holiday.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => void setAllActive(true)} disabled={busy || machines.length === 0} className="btn-primary">
@@ -88,7 +88,7 @@ export default function AdminHolidayMachines() {
       {loading ? (
         <div className="flex h-40 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" /></div>
       ) : machines.length === 0 ? (
-        <div className="card p-12 text-center text-sm text-slate-500">Belum ada mesin. Tambahkan mesin terlebih dahulu di halaman Machines.</div>
+        <div className="card p-12 text-center text-sm text-slate-500">Belum ada mesin berbadge MFD. Ubah badge mesin menjadi MFD di halaman Machines.</div>
       ) : (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">

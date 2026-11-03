@@ -17,6 +17,7 @@ export interface Machine {
   location: string | null;
   description: string | null;
   is_active: boolean;
+  machine_category: 'rutin' | 'mfd';
   created_at: string;
 }
 

@@ -33,6 +33,7 @@ export default function AdminMachines() {
   const [code, setCode] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
+  const [machineCategory, setMachineCategory] = useState<'rutin' | 'mfd'>('rutin');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +75,7 @@ export default function AdminMachines() {
     setCode('');
     setLocation('');
     setDescription('');
+    setMachineCategory('rutin');
     setError(null);
     setShowForm(true);
   }
@@ -84,6 +86,7 @@ export default function AdminMachines() {
     setCode(machine.code);
     setLocation(machine.location || '');
     setDescription(machine.description || '');
+    setMachineCategory(machine.machine_category || 'rutin');
     setError(null);
     setShowForm(true);
   }
@@ -101,20 +104,24 @@ export default function AdminMachines() {
       code: code.trim().toUpperCase(),
       location: location.trim() || null,
       description: description.trim() || null,
+      machine_category: machineCategory,
     };
 
+    let saveError: string | null = null;
     if (editing) {
       const { error: err } = await supabase
         .from('machines')
         .update(payload)
         .eq('id', editing.id);
-      if (err) setError(err.message);
+      if (err) saveError = err.message;
     } else {
       const { error: err } = await supabase.from('machines').insert(payload);
-      if (err) setError(err.message);
+      if (err) saveError = err.message;
     }
 
-    if (!error) {
+    if (saveError) {
+      setError(saveError);
+    } else {
       setShowForm(false);
       await loadMachines();
     }
@@ -248,7 +255,7 @@ export default function AdminMachines() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr><th className="px-5 py-3">Machine</th><th className="px-5 py-3">Location</th><th className="px-5 py-3">Parameters</th><th className="px-5 py-3 text-right">Actions</th></tr>
+                <tr><th className="px-5 py-3">Machine</th><th className="px-5 py-3">Badge</th><th className="px-5 py-3">Location</th><th className="px-5 py-3">Parameters</th><th className="px-5 py-3 text-right">Actions</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredMachines.map((machine) => (
@@ -264,6 +271,7 @@ export default function AdminMachines() {
                       </div>
                       {machine.description && <p className="ml-12 mt-1 line-clamp-1 text-xs text-slate-400">{machine.description}</p>}
                     </td>
+                    <td className="px-5 py-4"><span className={`badge ${machine.machine_category === 'mfd' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`}>{machine.machine_category === 'mfd' ? 'MFD' : 'Rutin'}</span></td>
                     <td className="px-5 py-4 text-slate-500">{machine.location ? <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{machine.location}</span> : '—'}</td>
                     <td className="px-5 py-4 text-slate-500">{machine.paramCount || 0}</td>
                     <td className="px-5 py-4"><div className="flex justify-end gap-2">
@@ -305,6 +313,14 @@ export default function AdminMachines() {
               <div>
                 <label className="label-text">Description (optional)</label>
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="input-field resize-none" placeholder="Brief description of the machine..." />
+              </div>
+              <div>
+                <label className="label-text">Badge Machine</label>
+                <select value={machineCategory} onChange={(e) => setMachineCategory(e.target.value as 'rutin' | 'mfd')} className="input-field">
+                  <option value="rutin">Rutin</option>
+                  <option value="mfd">MFD</option>
+                </select>
+                <p className="mt-1 text-xs text-slate-400">Mesin berbadge MFD akan muncul di halaman Machine For Holiday.</p>
               </div>
               {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
             </div>
