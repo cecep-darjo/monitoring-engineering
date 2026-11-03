@@ -16,6 +16,8 @@ export default function WorkRequests() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [requestedBy, setRequestedBy] = useState('');
@@ -129,11 +131,22 @@ export default function WorkRequests() {
 
   async function handleDelete(item: WorkRequestWithPhotos) {
     if (!window.confirm(`Hapus titipan pekerjaan "${item.title}"?`)) return;
-    for (const photo of item.photos) {
-      await supabase.storage.from(STORAGE_BUCKET).remove([photo.storage_path]);
+    setDeletingId(item.id);
+    setActionError(null);
+    try {
+      for (const photo of item.photos) {
+        const { error: photoError } = await supabase.storage.from(STORAGE_BUCKET).remove([photo.storage_path]);
+        if (photoError) throw new Error(`Gagal menghapus foto ${photo.file_name || ''}: ${photoError.message}`);
+      }
+      const { error: deleteError } = await supabase.from('work_requests').delete().eq('id', item.id);
+      if (deleteError) throw deleteError;
+      if (expandedId === item.id) setExpandedId(null);
+      await load();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Gagal menghapus titipan pekerjaan.');
+    } finally {
+      setDeletingId(null);
     }
-    await supabase.from('work_requests').delete().eq('id', item.id);
-    await load();
   }
 
   const canManage = (item: WorkRequest) => profile && (profile.role === 'admin' || profile.id === item.technician_id);
@@ -150,6 +163,8 @@ export default function WorkRequests() {
           {showForm ? 'Batal' : 'Tambah Titipan'}
         </button>
       </div>
+
+      {actionError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>}
 
       {showForm && (
         <div className="card p-5 space-y-4">
@@ -235,11 +250,12 @@ export default function WorkRequests() {
             const isExpanded = expandedId === item.id;
             return (
               <div key={item.id} className="card overflow-hidden">
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                  className="w-full flex items-center justify-between p-4 text-left hover:bg-slate-50 transition-colors"
-                >
-                  <div className="min-w-0">
+                <div className="flex items-start gap-3 p-4 hover:bg-slate-50 transition-colors">
+                  <button
+                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                    className="flex min-w-0 flex-1 items-center justify-between text-left"
+                  >
+                    <div className="min-w-0">
                     <p className="font-semibold text-slate-900 text-sm truncate">{item.title}</p>
                     <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 flex-wrap">
                       <span className="flex items-center gap-1"><User className="w-3 h-3" /> Diminta oleh: {item.requested_by}</span>
@@ -247,9 +263,21 @@ export default function WorkRequests() {
                       <span>Teknisi: {item.technician_name}</span>
                       {item.photos.length > 0 && <span>{item.photos.length} foto</span>}
                     </div>
-                  </div>
-                  {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
-                </button>
+                    </div>
+                    {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
+                  </button>
+                  {profile?.role === 'admin' && (
+                    <button
+                      onClick={() => void handleDelete(item)}
+                      disabled={deletingId === item.id}
+                      className="btn-ghost flex-shrink-0 border border-red-200 px-2.5 text-xs text-red-600 disabled:opacity-50"
+                      title="Hapus titipan pekerjaan"
+                    >
+                      {deletingId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      Hapus
+                    </button>
+                  )}
+                </div>
                 {isExpanded && (
                   <div className="px-4 pb-4 border-t border-slate-100 pt-3 space-y-3">
                     <p className="text-sm text-slate-600 whitespace-pre-wrap">{item.description}</p>
@@ -262,9 +290,9 @@ export default function WorkRequests() {
                         ))}
                       </div>
                     )}
-                    {canManage(item) && (
+                    {canManage(item) && profile?.role !== 'admin' && (
                       <div className="flex justify-end">
-                        <button onClick={() => handleDelete(item)} className="btn-ghost text-xs border border-red-200 text-red-600 px-2.5">
+                        <button onClick={() => void handleDelete(item)} disabled={deletingId === item.id} className="btn-ghost text-xs border border-red-200 text-red-600 px-2.5 disabled:opacity-50">
                           <Trash2 className="w-3.5 h-3.5" />
                           Hapus
                         </button>
