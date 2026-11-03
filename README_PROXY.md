@@ -114,6 +114,7 @@ Anda akan melihat ringkasan seperti:
 | Login gagal / data kosong | Pastikan `.env.local-proxy` benar dan proxy berhasil terkoneksi. Cek log terminal proxy untuk error backend. |
 | Foto tidak tampil | Beberapa bucket storage perlu akses anon. Pastikan `ANON_KEY` benar di `.env.local-proxy`. |
 | Port sudah terpakai | Ganti `PORT` di `.env.local-proxy`, lalu jalankan ulang. |
+| `start-monitoring.bat` bilang "SUPABASE_URL belum terisi" padahal sudah diisi | File `.env.local-proxy` diawali huruf BOM (UTF-8 with BOM) sehingga baris pertama `SUPABASE_URL` tidak terbaca. Simpan ulang file **UTF-8 tanpa BOM** (mis. via Notepad: Save As → Encoding "UTF-8", atau lewat PowerShell `Set-Content`), atau salin ulang dari `.env.local-proxy.example`. |
 | `npm run build:proxy` gagal | Pastikan Node & PowerShell tersedia, dan `.env.local-proxy` sudah diisi `ANON_KEY`. |
 
 ## Update aplikasi (bila ada versi baru)
