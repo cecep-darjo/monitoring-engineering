@@ -8,6 +8,7 @@ import History from '@/pages/History';
 import Reports from '@/pages/Reports';
 import AdminMachines from '@/pages/AdminMachines';
 import AdminHolidayMachines from '@/pages/AdminHolidayMachines';
+import AdminRoutineMachines from '@/pages/AdminRoutineMachines';
 import AdminParameters from '@/pages/AdminParameters';
 import AdminSchedules from '@/pages/AdminSchedules';
 import AdminUsers from '@/pages/AdminUsers';
@@ -39,6 +40,7 @@ function AppContent() {
     !isAdmin &&
     (page === 'admin-machines' ||
       page === 'admin-holiday-machines' ||
+      page === 'admin-routine-machines' ||
       page === 'admin-parameters' ||
       page === 'admin-schedules' ||
       page === 'admin-users' ||
@@ -73,6 +75,7 @@ function AppContent() {
       {currentPage === 'trend-analysis' && <TrendAnalysis />}
       {currentPage === 'admin-machines' && isAdmin && <AdminMachines />}
       {currentPage === 'admin-holiday-machines' && isAdmin && <AdminHolidayMachines />}
+      {currentPage === 'admin-routine-machines' && isAdmin && <AdminRoutineMachines />}
       {currentPage === 'admin-parameters' && isAdmin && <AdminParameters />}
       {currentPage === 'admin-schedules' && isAdmin && <AdminSchedules />}
       {currentPage === 'admin-users' && isAdmin && <AdminUsers />}

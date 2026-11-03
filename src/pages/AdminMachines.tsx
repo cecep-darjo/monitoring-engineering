@@ -11,6 +11,9 @@ import {
   XCircle,
   Power,
   PowerOff,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Machine, Parameter, MachineParameter } from '@/lib/types';
@@ -19,11 +22,15 @@ interface MachineWithParams extends Machine {
   paramCount?: number;
 }
 
+type MachineSortField = 'name' | 'machine_category' | 'location' | 'paramCount' | 'is_active';
+
 export default function AdminMachines() {
   const [machines, setMachines] = useState<MachineWithParams[]>([]);
   const [allParams, setAllParams] = useState<Parameter[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [sortField, setSortField] = useState<MachineSortField>('name');
+  const [sortAscending, setSortAscending] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Machine | null>(null);
   const [showParams, setShowParams] = useState<Machine | null>(null);
@@ -209,6 +216,37 @@ export default function AdminMachines() {
       m.code.toLowerCase().includes(search.toLowerCase())
   );
 
+  const sortedMachines = [...filteredMachines].sort((a, b) => {
+    const left = a[sortField];
+    const right = b[sortField];
+    let comparison = 0;
+    if (left == null && right != null) comparison = -1;
+    else if (left != null && right == null) comparison = 1;
+    else if (typeof left === 'number' && typeof right === 'number') comparison = left - right;
+    else if (typeof left === 'boolean' && typeof right === 'boolean') comparison = Number(left) - Number(right);
+    else comparison = String(left ?? '').localeCompare(String(right ?? ''), 'id', { sensitivity: 'base' });
+    return (sortAscending ? 1 : -1) * comparison;
+  });
+
+  function sortBy(field: MachineSortField) {
+    if (sortField === field) setSortAscending((ascending) => !ascending);
+    else {
+      setSortField(field);
+      setSortAscending(true);
+    }
+  }
+
+  function sortHeader(label: string, field: MachineSortField, alignRight = false) {
+    const SortIcon = sortField === field ? (sortAscending ? ChevronUp : ChevronDown) : ArrowUpDown;
+    return (
+      <th className={`px-5 py-3 ${alignRight ? 'text-right' : ''}`}>
+        <button onClick={() => sortBy(field)} className={`inline-flex items-center gap-1.5 hover:text-slate-800 ${alignRight ? 'ml-auto' : ''}`}>
+          {label}<SortIcon className="h-3.5 w-3.5" />
+        </button>
+      </th>
+    );
+  }
+
   const availableParams = allParams.filter(
     (p) =>
       !machineParams.some((mp) => mp.parameter_id === p.id) &&
@@ -255,10 +293,11 @@ export default function AdminMachines() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr><th className="px-5 py-3">Machine</th><th className="px-5 py-3">Badge</th><th className="px-5 py-3">Location</th><th className="px-5 py-3">Parameters</th><th className="px-5 py-3 text-right">Actions</th></tr>
+                <tr>{sortHeader('Machine', 'name')}{sortHeader('Badge', 'machine_category')}{sortHeader('Location', 'location')}{sortHeader('Parameters', 'paramCount')}{sortHeader('Status', 'is_active')}
+                  <th className="px-5 py-3 text-right">Actions</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredMachines.map((machine) => (
+                {sortedMachines.map((machine) => (
                   <tr key={machine.id} className="hover:bg-slate-50/70">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
@@ -274,6 +313,7 @@ export default function AdminMachines() {
                     <td className="px-5 py-4"><span className={`badge ${machine.machine_category === 'mfd' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`}>{machine.machine_category === 'mfd' ? 'MFD' : 'Rutin'}</span></td>
                     <td className="px-5 py-4 text-slate-500">{machine.location ? <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{machine.location}</span> : '—'}</td>
                     <td className="px-5 py-4 text-slate-500">{machine.paramCount || 0}</td>
+                    <td className="px-5 py-4"><span className={`badge ${machine.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>{machine.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td className="px-5 py-4"><div className="flex justify-end gap-2">
                       <button onClick={() => openParams(machine)} className="btn-ghost border border-slate-200 px-2.5 text-xs"><Settings className="h-3.5 w-3.5" /> Parameters</button>
                       <button onClick={() => openEdit(machine)} title="Edit machine" className="btn-ghost border border-slate-200 px-2.5"><Edit2 className="h-3.5 w-3.5" /></button>
