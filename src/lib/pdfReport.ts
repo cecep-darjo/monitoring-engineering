@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { SHIFT_LABELS, ROUND_WINDOWS, type MonitoringRound, type MonitoringValue, type MonitoringPhoto, type Parameter, type WorkRequest, type WorkRequestPhoto, type RoundConclusion } from './types';
+import { SHIFT_LABELS, ROUND_WINDOWS, type MonitoringRound, type MonitoringValue, type MonitoringPhoto, type Parameter, type RoundConclusion } from './types';
 
 interface ReportData {
   date: string;
@@ -9,9 +9,6 @@ interface ReportData {
   photos: MonitoringPhoto[];
   photoUrls: Record<string, string>;
   parameters: Parameter[];
-  workRequests: WorkRequest[];
-  workRequestPhotos: WorkRequestPhoto[];
-  workRequestPhotoUrls: Record<string, string>;
   schedules: { id: string; machine_id: string; shift_number: number; round_number: number }[];
   scheduleParameters: { schedule_id: string; parameter_id: string; sort_order: number; depends_on_parameter_id: string | null; depends_on_value: string | null }[];
   roundConclusions: RoundConclusion[];
@@ -78,7 +75,7 @@ function getImageSize(dataUrl: string): Promise<{ w: number; h: number }> {
 }
 
 export async function generateReportPDF(data: ReportData) {
-  const { date, rounds, values, photos, photoUrls, parameters, workRequests, workRequestPhotos, workRequestPhotoUrls, schedules, scheduleParameters, roundConclusions, machineFilter, shiftFilter } = data;
+  const { date, rounds, values, photos, photoUrls, parameters, schedules, scheduleParameters, roundConclusions, machineFilter, shiftFilter } = data;
   const doc = new jsPDF('l', 'mm', 'a4');
   const w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight(), m = 8;
   const bottomLimit = h - 12;
@@ -392,80 +389,6 @@ export async function generateReportPDF(data: ReportData) {
 
       rowMaxH = Math.max(rowMaxH, blockH);
       x += cellW + gap;
-    }
-  }
-
-  // ---- Titipan Pekerjaan: always the very last section of the report ----
-  if (workRequests.length) {
-    doc.addPage();
-    drawHeader();
-    cursorY = 27;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(18, 79, 121);
-    doc.text('TITIPAN PEKERJAAN', m, cursorY);
-    cursorY += 7;
-
-    const photosByRequest = new Map<string, WorkRequestPhoto[]>();
-    for (const p of workRequestPhotos) {
-      if (!photosByRequest.has(p.work_request_id)) photosByRequest.set(p.work_request_id, []);
-      photosByRequest.get(p.work_request_id)!.push(p);
-    }
-
-    for (const wr of workRequests) {
-      const time = new Date(wr.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-      ensureSpace(16);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(15, 23, 42);
-      doc.text(wr.title, m, cursorY);
-      cursorY += 4;
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); doc.setTextColor(100, 116, 139);
-      doc.text(`Diminta oleh: ${wr.requested_by}   |   Teknisi: ${wr.technician_name}   |   Jam: ${time}`, m, cursorY);
-      cursorY += 4;
-
-      doc.setFontSize(7); doc.setTextColor(51, 65, 85);
-      const descLines = doc.splitTextToSize(wr.description, w - m * 2);
-      ensureSpace(descLines.length * 3.4);
-      doc.text(descLines, m, cursorY);
-      cursorY += descLines.length * 3.4 + 2;
-
-      const reqPhotos = photosByRequest.get(wr.id) || [];
-      if (reqPhotos.length) {
-        const cellW = 34, cellH = 26, gap = 3;
-        let x = m, rowMaxH = 0;
-        ensureSpace(cellH + 4);
-        for (const photo of reqPhotos) {
-          const url = workRequestPhotoUrls[photo.id];
-          const loaded = url ? await toDataUrl(url) : null;
-          let drawW = cellW, drawH = cellH, offX = 0, offY = 0;
-          if (loaded) {
-            const { w: iw, h: ih } = await getImageSize(loaded.dataUrl);
-            const ratio = iw / ih || 1.33;
-            if (ratio > cellW / cellH) { drawW = cellW; drawH = cellW / ratio; }
-            else { drawH = cellH; drawW = cellH * ratio; }
-            offX = (cellW - drawW) / 2;
-            offY = (cellH - drawH) / 2;
-          }
-          if (x + cellW > w - m) { x = m; cursorY += rowMaxH + 2; rowMaxH = 0; ensureSpace(cellH + 4); }
-
-          doc.setDrawColor(203, 213, 225);
-          doc.setLineWidth(0.2);
-          doc.rect(x, cursorY, cellW, cellH);
-
-          if (loaded) {
-            try { doc.addImage(loaded.dataUrl, loaded.format, x + offX, cursorY + offY, drawW, drawH); }
-            catch { /* border already drawn; leave cell empty on failure */ }
-          } else {
-            doc.setFillColor(245, 245, 245);
-            doc.rect(x + 0.3, cursorY + 0.3, cellW - 0.6, cellH - 0.6, 'F');
-          }
-          rowMaxH = Math.max(rowMaxH, cellH);
-          x += cellW + gap;
-        }
-        cursorY += rowMaxH + 3;
-      }
-
-      ensureSpace(4);
-      doc.setDrawColor(226, 232, 240);
-      doc.line(m, cursorY, w - m, cursorY);
-      cursorY += 4;
     }
   }
 

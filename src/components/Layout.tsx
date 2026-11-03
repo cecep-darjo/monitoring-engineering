@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   ClipboardPlus,
@@ -18,8 +18,11 @@ import {
   TrendingUp,
   CalendarDays,
   ClipboardCheck,
+  Bell,
+  Clock3,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 import interbatLogo from '@/assets/interbat-logo.png';
 
 export type PageKey =
@@ -68,12 +71,52 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+interface WorkReminder {
+  id: string;
+  title: string;
+  scheduled_date: string | null;
+  shift_number: number | null;
+  round_number: number | null;
+}
+
+function reminderTime(reminder: WorkReminder): Date | null {
+  if (!reminder.scheduled_date || !reminder.shift_number || !reminder.round_number) return null;
+  const startHours: Record<number, Record<number, number>> = { 1: { 1: 7, 2: 11 }, 2: { 1: 15, 2: 19 }, 3: { 1: 23, 2: 3 } };
+  const hour = startHours[reminder.shift_number]?.[reminder.round_number];
+  if (hour === undefined) return null;
+  const [year, month, day] = reminder.scheduled_date.split('-').map(Number);
+  const result = new Date(year, month - 1, day, hour);
+  if (reminder.shift_number === 3 && reminder.round_number === 2) result.setDate(result.getDate() + 1);
+  return result;
+}
+
 export default function Layout({ current, onNavigate, children }: LayoutProps) {
   const { profile, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [reminders, setReminders] = useState<WorkReminder[]>([]);
+  const [remindersOpen, setRemindersOpen] = useState(false);
 
   const isAdmin = profile?.role === 'admin';
   const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadReminders() {
+      const { data } = await supabase.from('work_requests')
+        .select('id, title, scheduled_date, shift_number, round_number')
+        .eq('status', 'pending')
+        .not('scheduled_date', 'is', null);
+      if (!mounted) return;
+      const cutoff = Date.now() + 60 * 60 * 1000;
+      setReminders((data || []).filter((item) => {
+        const start = reminderTime(item as WorkReminder);
+        return start !== null && start.getTime() <= cutoff;
+      }).sort((a, b) => (reminderTime(a as WorkReminder)?.getTime() ?? 0) - (reminderTime(b as WorkReminder)?.getTime() ?? 0)) as WorkReminder[]);
+    }
+    void loadReminders();
+    const interval = window.setInterval(() => void loadReminders(), 60_000);
+    return () => { mounted = false; window.clearInterval(interval); };
+  }, []);
 
   const handleNavigate = (key: PageKey) => {
     onNavigate(key);
@@ -171,6 +214,26 @@ export default function Layout({ current, onNavigate, children }: LayoutProps) {
 
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 animate-fade-in">
+            <div className="relative mb-3 flex justify-end">
+              <button onClick={() => setRemindersOpen((open) => !open)} className="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50" aria-label="Pengingat titipan pekerjaan">
+                <Bell className="h-5 w-5" />
+                {reminders.length > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{reminders.length > 9 ? '9+' : reminders.length}</span>}
+              </button>
+              {remindersOpen && (
+                <div className="absolute right-0 top-11 z-30 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                  <div className="border-b border-slate-100 px-4 py-3"><p className="text-sm font-semibold text-slate-800">Pengingat Titipan</p><p className="text-xs text-slate-500">Jadwal yang sudah waktunya atau dimulai dalam 1 jam.</p></div>
+                  {reminders.length === 0 ? <p className="px-4 py-5 text-sm text-slate-500">Belum ada titipan yang perlu diingatkan.</p> : (
+                    <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
+                      {reminders.map((reminder) => {
+                        const start = reminderTime(reminder);
+                        const overdue = !!start && start.getTime() <= Date.now();
+                        return <button key={reminder.id} onClick={() => { setRemindersOpen(false); handleNavigate('work-requests'); }} className="block w-full px-4 py-3 text-left hover:bg-slate-50"><span className="block truncate text-sm font-medium text-slate-800">{reminder.title}</span><span className={`mt-1 flex items-center gap-1 text-xs ${overdue ? 'text-red-600' : 'text-amber-600'}`}><Clock3 className="h-3 w-3" />{overdue ? 'Sudah waktunya' : `Mulai ${start?.toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}`}</span></button>;
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             {children}
           </div>
         </main>

@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { ClipboardList, Plus, X, Camera, Loader2, User, Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Bell, Calendar, Camera, CheckCircle2, ChevronDown, ChevronUp, ClipboardList,
+  Clock3, Loader2, Plus, Trash2, User, X,
+} from 'lucide-react';
 import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import type { WorkRequest, WorkRequestPhoto } from '@/lib/types';
@@ -8,38 +11,83 @@ interface WorkRequestWithPhotos extends WorkRequest {
   photos: (WorkRequestPhoto & { url: string })[];
 }
 
+type WorkFilter = 'all' | 'in_progress' | 'upcoming' | 'completed';
+type SortOrder = 'newest' | 'oldest';
+
+const MAX_PHOTO_BYTES = 500 * 1024;
+const SHIFT_START_HOURS: Record<number, Record<number, number>> = {
+  1: { 1: 7, 2: 11 },
+  2: { 1: 15, 2: 19 },
+  3: { 1: 23, 2: 3 },
+};
+
+function localDateInputValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function scheduleDateTime(item: Pick<WorkRequest, 'scheduled_date' | 'shift_number' | 'round_number'>): Date | null {
+  if (!item.scheduled_date || !item.shift_number || !item.round_number) return null;
+  const hour = SHIFT_START_HOURS[item.shift_number]?.[item.round_number];
+  if (hour === undefined) return null;
+  const [year, month, day] = item.scheduled_date.split('-').map(Number);
+  const date = new Date(year, month - 1, day, hour);
+  if (item.shift_number === 3 && item.round_number === 2) date.setDate(date.getDate() + 1);
+  return date;
+}
+
+function formatDate(value: string | null) {
+  if (!value) return 'Jadwal lama';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', { dateStyle: 'medium' });
+}
+
+function localDateKey(value: string) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export default function WorkRequests() {
   const { profile } = useAuth();
   const [items, setItems] = useState<WorkRequestWithPhotos[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [completionId, setCompletionId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [requestedBy, setRequestedBy] = useState('');
-  const [description, setDescription] = useState('');
-  const [photos, setPhotos] = useState<File[]>([]);
+  const [scheduledDate, setScheduledDate] = useState(localDateInputValue);
+  const [shiftNumber, setShiftNumber] = useState(1);
+  const [roundNumber, setRoundNumber] = useState(1);
+  const [workDetail, setWorkDetail] = useState('');
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const [filter, setFilter] = useState<WorkFilter>('all');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
+  const [completedFrom, setCompletedFrom] = useState('');
+  const [completedTo, setCompletedTo] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { void load(); }, []);
 
   async function load() {
     setLoading(true);
-    const { data: requests } = await supabase
-      .from('work_requests')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    const ids = (requests || []).map((r) => r.id);
-    const { data: photoData } = ids.length
+    const { data: requests, error: requestError } = await supabase
+      .from('work_requests').select('*').order('created_at', { ascending: false });
+    if (requestError) {
+      setActionError(requestError.message);
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    const ids = (requests || []).map((request) => request.id);
+    const { data: photoData, error: photosError } = ids.length
       ? await supabase.from('work_request_photos').select('*').in('work_request_id', ids)
-      : { data: [] as WorkRequestPhoto[] };
+      : { data: [] as WorkRequestPhoto[], error: null };
+    if (photosError) setActionError(photosError.message);
 
     const photosByRequest = new Map<string, (WorkRequestPhoto & { url: string })[]>();
     for (const photo of photoData || []) {
@@ -47,119 +95,190 @@ export default function WorkRequests() {
       if (!photosByRequest.has(photo.work_request_id)) photosByRequest.set(photo.work_request_id, []);
       photosByRequest.get(photo.work_request_id)!.push({ ...photo, url });
     }
-
-    setItems((requests || []).map((r) => ({ ...r, photos: photosByRequest.get(r.id) || [] })));
+    setItems((requests || []).map((request) => ({ ...request, photos: photosByRequest.get(request.id) || [] })));
     setLoading(false);
   }
 
-  function resetForm() {
+  function resetCreateForm() {
     setTitle('');
     setRequestedBy('');
-    setDescription('');
-    setPhotos([]);
+    setScheduledDate(localDateInputValue());
+    setShiftNumber(1);
+    setRoundNumber(1);
     setShowForm(false);
     setError(null);
   }
 
-  const MAX_PHOTO_BYTES = 500 * 1024;
-
-  function handleFileSelect(files: FileList | null) {
-    if (!files) return;
-    const incoming = Array.from(files);
-    const tooLarge = incoming.filter((f) => f.size > MAX_PHOTO_BYTES);
-    const okFiles = incoming.filter((f) => f.size <= MAX_PHOTO_BYTES);
-
-    if (tooLarge.length > 0) {
-      setError(
-        `${tooLarge.length} foto melebihi 500KB dan tidak diupload: ${tooLarge
-          .map((f) => `${f.name} (${(f.size / 1024).toFixed(0)}KB)`)
-          .join(', ')}. Kompres atau ambil foto dengan resolusi lebih kecil.`
-      );
-    } else {
-      setError(null);
-    }
-
-    if (okFiles.length > 0) setPhotos((prev) => [...prev, ...okFiles]);
-  }
-
-  function removePhoto(idx: number) {
-    setPhotos((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  async function handleSubmit() {
+  async function handleCreate() {
     if (!profile) return;
-    if (!title.trim() || !requestedBy.trim() || !description.trim()) {
-      setError('Judul, peminta, dan deskripsi pekerjaan wajib diisi.');
+    if (!title.trim() || !requestedBy.trim() || !scheduledDate) {
+      setError('Judul, peminta, tanggal, shift, dan round wajib diisi.');
       return;
     }
     setSaving(true);
     setError(null);
-    try {
-      const { data: workRequest, error: insertErr } = await supabase
-        .from('work_requests')
-        .insert({
-          technician_id: profile.id,
-          technician_name: profile.full_name,
-          title: title.trim(),
-          requested_by: requestedBy.trim(),
-          description: description.trim(),
-        })
-        .select()
-        .single();
-      if (insertErr) throw insertErr;
-
-      for (const file of photos) {
-        const ext = file.name.split('.').pop();
-        const path = `work-requests/${workRequest.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: uploadErr } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file);
-        if (uploadErr) throw uploadErr;
-        await supabase.from('work_request_photos').insert({
-          work_request_id: workRequest.id,
-          storage_path: path,
-          file_name: file.name,
-        });
-      }
-
-      resetForm();
+    const { error: insertError } = await supabase.from('work_requests').insert({
+      technician_id: profile.id,
+      technician_name: profile.full_name,
+      title: title.trim(),
+      requested_by: requestedBy.trim(),
+      description: null,
+      scheduled_date: scheduledDate,
+      shift_number: shiftNumber,
+      round_number: roundNumber,
+      status: 'pending',
+      completed_at: null,
+    });
+    if (insertError) setError(insertError.message);
+    else {
+      resetCreateForm();
+      setFilter('upcoming');
       await load();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Gagal menyimpan titipan pekerjaan';
-      setError(msg);
     }
     setSaving(false);
   }
 
+  function handleEvidenceSelect(fileList: FileList | null) {
+    if (!fileList) return;
+    const incoming = Array.from(fileList);
+    const oversized = incoming.filter((file) => file.size > MAX_PHOTO_BYTES);
+    if (oversized.length) {
+      setActionError(`Foto bukti maksimal 500KB per file: ${oversized.map((file) => file.name).join(', ')}`);
+    } else {
+      setActionError(null);
+    }
+    setEvidenceFiles((current) => [...current, ...incoming.filter((file) => file.size <= MAX_PHOTO_BYTES)]);
+  }
+
+  async function startWork(item: WorkRequestWithPhotos) {
+    setBusyId(item.id);
+    setActionError(null);
+    const { error: updateError } = await supabase.from('work_requests').update({ status: 'in_progress' }).eq('id', item.id);
+    if (updateError) setActionError(updateError.message);
+    else {
+      setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: 'in_progress' } : entry));
+      setExpandedId(item.id);
+      setCompletionId(item.id);
+      setWorkDetail('');
+      setEvidenceFiles([]);
+    }
+    setBusyId(null);
+  }
+
+  async function completeWork(item: WorkRequestWithPhotos) {
+    if (!workDetail.trim()) {
+      setActionError('Detail pekerjaan yang sudah dikerjakan wajib diisi.');
+      return;
+    }
+    if (!evidenceFiles.length) {
+      setActionError('Tambahkan minimal satu foto bukti sebelum menyelesaikan titipan.');
+      return;
+    }
+    setBusyId(item.id);
+    setActionError(null);
+    const uploadedPaths: string[] = [];
+    const insertedPhotoIds: string[] = [];
+    try {
+      for (const file of evidenceFiles) {
+        const ext = file.name.split('.').pop() || 'jpg';
+        const path = `work-requests/${item.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file);
+        if (uploadError) throw uploadError;
+        uploadedPaths.push(path);
+        const { data: photoRow, error: photoError } = await supabase.from('work_request_photos').insert({
+          work_request_id: item.id,
+          storage_path: path,
+          file_name: file.name,
+        }).select('id').single();
+        if (photoError) throw photoError;
+        if (photoRow?.id) insertedPhotoIds.push(photoRow.id);
+      }
+
+      const { error: updateError } = await supabase.from('work_requests').update({
+        description: workDetail.trim(),
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      }).eq('id', item.id);
+      if (updateError) throw updateError;
+      setCompletionId(null);
+      setWorkDetail('');
+      setEvidenceFiles([]);
+      setFilter('completed');
+      await load();
+    } catch (err) {
+      if (insertedPhotoIds.length) await supabase.from('work_request_photos').delete().in('id', insertedPhotoIds);
+      await Promise.all(uploadedPaths.map((path) => supabase.storage.from(STORAGE_BUCKET).remove([path])));
+      setActionError(err instanceof Error ? err.message : 'Gagal menyelesaikan titipan pekerjaan.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleDelete(item: WorkRequestWithPhotos) {
     if (!window.confirm(`Hapus titipan pekerjaan "${item.title}"?`)) return;
-    setDeletingId(item.id);
+    setBusyId(item.id);
     setActionError(null);
     try {
       for (const photo of item.photos) {
         const { error: photoError } = await supabase.storage.from(STORAGE_BUCKET).remove([photo.storage_path]);
-        if (photoError) throw new Error(`Gagal menghapus foto ${photo.file_name || ''}: ${photoError.message}`);
+        if (photoError) throw photoError;
       }
       const { error: deleteError } = await supabase.from('work_requests').delete().eq('id', item.id);
       if (deleteError) throw deleteError;
-      if (expandedId === item.id) setExpandedId(null);
       await load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Gagal menghapus titipan pekerjaan.');
     } finally {
-      setDeletingId(null);
+      setBusyId(null);
     }
   }
 
+  const counts = useMemo(() => ({
+    in_progress: items.filter((item) => item.status === 'in_progress').length,
+    upcoming: items.filter((item) => item.status === 'pending').length,
+    completed: items.filter((item) => item.status === 'completed').length,
+  }), [items]);
+
+  const filteredItems = useMemo(() => {
+    const rows = items.filter((item) => {
+      if (filter === 'in_progress' && item.status !== 'in_progress') return false;
+      if (filter === 'upcoming' && item.status !== 'pending') return false;
+      if (filter === 'completed' && item.status !== 'completed') return false;
+      if (filter === 'completed' && (completedFrom || completedTo)) {
+        const completedDate = localDateKey(item.completed_at || item.created_at);
+        if (completedFrom && completedDate < completedFrom) return false;
+        if (completedTo && completedDate > completedTo) return false;
+      }
+      return true;
+    });
+    return rows.sort((a, b) => {
+      const aDate = filter === 'completed'
+        ? new Date(a.completed_at || a.created_at).getTime()
+        : (scheduleDateTime(a)?.getTime() ?? new Date(a.created_at).getTime());
+      const bDate = filter === 'completed'
+        ? new Date(b.completed_at || b.created_at).getTime()
+        : (scheduleDateTime(b)?.getTime() ?? new Date(b.created_at).getTime());
+      return sortOrder === 'newest' ? bDate - aDate : aDate - bDate;
+    });
+  }, [items, filter, completedFrom, completedTo, sortOrder]);
+
   const canManage = (item: WorkRequest) => profile && (profile.role === 'admin' || profile.id === item.technician_id);
+
+  const filterCards: { key: WorkFilter; title: string; count: number; color: string }[] = [
+    { key: 'in_progress', title: 'Sedang berjalan', count: counts.in_progress, color: 'text-blue-600' },
+    { key: 'upcoming', title: 'Akan datang', count: counts.upcoming, color: 'text-amber-600' },
+    { key: 'completed', title: 'Selesai', count: counts.completed, color: 'text-emerald-600' },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Titipan Pekerjaan</h1>
-          <p className="text-slate-500 text-sm mt-1">Catatan pekerjaan tambahan di luar monitoring rutin.</p>
+          <p className="mt-1 text-sm text-slate-500">Jadwalkan pekerjaan berdasarkan tanggal, shift, dan round. Lengkapi detail serta foto bukti saat selesai.</p>
         </div>
-        <button onClick={() => setShowForm((v) => !v)} className="btn-primary">
-          {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+        <button onClick={() => setShowForm((value) => !value)} className="btn-primary">
+          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           {showForm ? 'Batal' : 'Tambah Titipan'}
         </button>
       </div>
@@ -167,137 +286,124 @@ export default function WorkRequests() {
       {actionError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>}
 
       {showForm && (
-        <div className="card p-5 space-y-4">
-          <div>
-            <label className="label-text">Judul Pekerjaan</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="input-field" placeholder="mis. Perbaikan kebocoran pipa area produksi" />
-          </div>
-          <div>
-            <label className="label-text">Titipan dari (nama peminta)</label>
-            <input value={requestedBy} onChange={(e) => setRequestedBy(e.target.value)} className="input-field" placeholder="mis. Pak Budi (Supervisor Produksi)" />
-          </div>
-          <div>
-            <label className="label-text">Deskripsi Pekerjaan yang Sudah Dikerjakan</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="input-field min-h-24"
-              placeholder="Jelaskan apa yang sudah dikerjakan, hasil, dan catatan lainnya..."
-            />
-          </div>
-
-          <div>
-            <label className="label-text">Foto (opsional)</label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(e) => handleFileSelect(e.target.files)}
-              className="hidden"
-            />
-            <div className="space-y-2 mt-1">
-              {photos.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {photos.map((file, idx) => (
-                    <div key={idx} className="relative group">
-                      <img src={URL.createObjectURL(file)} alt="" className="w-20 h-20 rounded-lg object-cover border border-slate-200" />
-                      <button
-                        onClick={() => removePhoto(idx)}
-                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 text-sm text-teal-600 hover:text-teal-700 font-medium"
-              >
-                <Camera className="w-4 h-4" />
-                {photos.length > 0 ? 'Tambah foto lagi' : 'Upload foto'}
-              </button>
-              <p className="text-[10px] text-slate-400">Maks. 500KB per foto</p>
+        <div className="card space-y-4 p-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label-text">Judul Pekerjaan</label>
+              <input value={title} onChange={(event) => setTitle(event.target.value)} className="input-field" placeholder="mis. Perbaikan kebocoran pipa" />
+            </div>
+            <div>
+              <label className="label-text">Titipan dari</label>
+              <input value={requestedBy} onChange={(event) => setRequestedBy(event.target.value)} className="input-field" placeholder="Nama peminta pekerjaan" />
+            </div>
+            <div>
+              <label className="label-text">Tanggal</label>
+              <input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} className="input-field" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label-text">Shift</label>
+                <select value={shiftNumber} onChange={(event) => setShiftNumber(Number(event.target.value))} className="input-field">
+                  <option value={1}>Shift 1 (07-15)</option><option value={2}>Shift 2 (15-23)</option><option value={3}>Shift 3 (23-07)</option>
+                </select>
+              </div>
+              <div>
+                <label className="label-text">Round</label>
+                <select value={roundNumber} onChange={(event) => setRoundNumber(Number(event.target.value))} className="input-field">
+                  <option value={1}>Round 1</option><option value={2}>Round 2</option>
+                </select>
+              </div>
             </div>
           </div>
-
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-
+          {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
           <div className="flex justify-end gap-2">
-            <button onClick={resetForm} className="btn-ghost border border-slate-200">Batal</button>
-            <button onClick={handleSubmit} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              Simpan
+            <button onClick={resetCreateForm} className="btn-ghost border border-slate-200">Batal</button>
+            <button onClick={() => void handleCreate()} disabled={saving} className="btn-primary">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Simpan Jadwal
             </button>
           </div>
         </div>
       )}
 
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {filterCards.map((card) => (
+          <button key={card.key} onClick={() => setFilter(filter === card.key ? 'all' : card.key)} className={`card rounded-xl border p-4 text-left transition-colors ${filter === card.key ? 'border-blue-400 ring-1 ring-blue-300' : 'border-slate-200 hover:border-slate-300'}`}>
+            <p className="text-xs text-slate-500">{card.title}</p>
+            <p className={`mt-1 text-2xl font-bold ${card.color}`}>{card.count}</p>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label-text">Sortir</label>
+            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)} className="input-field min-w-40">
+              <option value="newest">Terbaru dulu</option><option value="oldest">Terlama dulu</option>
+            </select>
+          </div>
+          {filter === 'completed' && (
+            <>
+              <div><label className="label-text">Selesai dari</label><input type="date" value={completedFrom} onChange={(event) => setCompletedFrom(event.target.value)} className="input-field" /></div>
+              <div><label className="label-text">Sampai</label><input type="date" value={completedTo} onChange={(event) => setCompletedTo(event.target.value)} className="input-field" /></div>
+              {(completedFrom || completedTo) && <button onClick={() => { setCompletedFrom(''); setCompletedTo(''); }} className="btn-ghost border border-slate-200">Reset tanggal</button>}
+            </>
+          )}
+        </div>
+        <p className="text-xs text-slate-400">Menampilkan {filteredItems.length} dari {items.length} titipan</p>
+      </div>
+
       {loading ? (
-        <div className="flex items-center justify-center h-32">
-          <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : items.length === 0 ? (
-        <div className="card p-12 text-center">
-          <ClipboardList className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">Belum ada titipan pekerjaan yang tercatat.</p>
-        </div>
+        <div className="flex h-32 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" /></div>
+      ) : filteredItems.length === 0 ? (
+        <div className="card p-12 text-center"><ClipboardList className="mx-auto mb-3 h-12 w-12 text-slate-300" /><p className="text-sm text-slate-500">Tidak ada titipan pada filter ini.</p></div>
       ) : (
         <div className="space-y-3">
-          {items.map((item) => {
+          {filteredItems.map((item) => {
             const isExpanded = expandedId === item.id;
+            const isCompleting = completionId === item.id;
+            const scheduledAt = scheduleDateTime(item);
+            const statusLabel = item.status === 'completed' ? 'Selesai' : item.status === 'in_progress' ? 'Sedang berjalan' : 'Akan datang';
+            const statusClass = item.status === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : item.status === 'in_progress' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-amber-200 bg-amber-50 text-amber-700';
             return (
               <div key={item.id} className="card overflow-hidden">
-                <div className="flex items-start gap-3 p-4 hover:bg-slate-50 transition-colors">
-                  <button
-                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                    className="flex min-w-0 flex-1 items-center justify-between text-left"
-                  >
+                <div className="flex items-start gap-3 p-4">
+                  <button onClick={() => setExpandedId(isExpanded ? null : item.id)} className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left">
                     <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 text-sm truncate">{item.title}</p>
-                    <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 flex-wrap">
-                      <span className="flex items-center gap-1"><User className="w-3 h-3" /> Diminta oleh: {item.requested_by}</span>
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(item.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                      <span>Teknisi: {item.technician_name}</span>
-                      {item.photos.length > 0 && <span>{item.photos.length} foto</span>}
+                      <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-slate-900">{item.title}</p><span className={`badge ${statusClass}`}>{statusLabel}</span></div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />Peminta: {item.requested_by}</span>
+                        <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(item.scheduled_date)} · Shift {item.shift_number ?? '-'} · Round {item.round_number ?? '-'}</span>
+                        <span>Teknisi: {item.technician_name}</span>
+                        {item.status === 'completed' && <span>Selesai: {new Date(item.completed_at || item.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+                      </div>
                     </div>
-                    </div>
-                    {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
+                    {isExpanded ? <ChevronUp className="mt-1 h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-slate-400" />}
                   </button>
-                  {profile?.role === 'admin' && (
-                    <button
-                      onClick={() => void handleDelete(item)}
-                      disabled={deletingId === item.id}
-                      className="btn-ghost flex-shrink-0 border border-red-200 px-2.5 text-xs text-red-600 disabled:opacity-50"
-                      title="Hapus titipan pekerjaan"
-                    >
-                      {deletingId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                      Hapus
-                    </button>
-                  )}
+                  {item.status === 'pending' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary shrink-0 px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock3 className="h-3.5 w-3.5" />} Mulai</button>}
+                  {item.status === 'in_progress' && <button onClick={() => { setExpandedId(item.id); setCompletionId(isCompleting ? null : item.id); if (!isCompleting) { setWorkDetail(item.description || ''); setEvidenceFiles([]); } setActionError(null); }} className="btn-primary shrink-0 px-3 py-2 text-xs"><CheckCircle2 className="h-3.5 w-3.5" /> Selesaikan</button>}
+                  {profile?.role === 'admin' && <button onClick={() => void handleDelete(item)} disabled={busyId === item.id} title="Hapus titipan" className="btn-ghost shrink-0 border border-red-200 px-2.5 text-xs text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>}
                 </div>
                 {isExpanded && (
-                  <div className="px-4 pb-4 border-t border-slate-100 pt-3 space-y-3">
-                    <p className="text-sm text-slate-600 whitespace-pre-wrap">{item.description}</p>
-                    {item.photos.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {item.photos.map((photo) => (
-                          <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer">
-                            <img src={photo.url} alt={photo.file_name || ''} className="w-24 h-24 rounded-lg object-cover border border-slate-200 hover:opacity-80 transition-opacity" />
-                          </a>
-                        ))}
+                  <div className="space-y-3 border-t border-slate-100 px-4 pb-4 pt-3">
+                    <div className="flex flex-wrap gap-4 text-xs text-slate-500"><span>Dibuat: {new Date(item.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>{scheduledAt && <span>Waktu mulai jadwal: {scheduledAt.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}</div>
+                    {item.description ? <div><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Detail pekerjaan</h3><p className="whitespace-pre-wrap text-sm text-slate-700">{item.description}</p></div> : <p className="text-sm italic text-slate-400">Detail pekerjaan diisi saat titipan diselesaikan.</p>}
+                    {item.photos.length > 0 && <div><h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Foto bukti</h3><div className="flex flex-wrap gap-2">{item.photos.map((photo) => <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer"><img src={photo.url} alt={photo.file_name || ''} className="h-24 w-24 rounded-lg border border-slate-200 object-cover hover:opacity-80" /></a>)}</div></div>}
+                    {isCompleting && item.status === 'in_progress' && (
+                      <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+                        <div><label className="label-text">Detail pekerjaan yang sudah dikerjakan</label><textarea value={workDetail} onChange={(event) => setWorkDetail(event.target.value)} className="input-field min-h-24" placeholder="Jelaskan pekerjaan, hasil, dan catatan..." /></div>
+                        <div>
+                          <label className="label-text">Foto bukti (wajib, maks. 500KB per foto)</label>
+                          <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={(event) => handleEvidenceSelect(event.target.files)} className="hidden" />
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {evidenceFiles.map((file, index) => <span key={`${file.name}-${index}`} className="rounded-md bg-white px-2 py-1 text-xs text-slate-600">{file.name}<button onClick={() => setEvidenceFiles((current) => current.filter((_, i) => i !== index))} className="ml-2 text-red-500" aria-label={`Hapus ${file.name}`}><X className="inline h-3 w-3" /></button></span>)}
+                            <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 text-sm font-medium text-teal-700"><Camera className="h-4 w-4" />Tambah foto</button>
+                          </div>
+                        </div>
+                        <div className="flex justify-end"><button onClick={() => void completeWork(item)} disabled={busyId === item.id} className="btn-primary">{busyId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Simpan & Selesaikan</button></div>
                       </div>
                     )}
-                    {canManage(item) && profile?.role !== 'admin' && (
-                      <div className="flex justify-end">
-                        <button onClick={() => void handleDelete(item)} disabled={deletingId === item.id} className="btn-ghost text-xs border border-red-200 text-red-600 px-2.5 disabled:opacity-50">
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Hapus
-                        </button>
-                      </div>
-                    )}
+                    {canManage(item) && profile?.role !== 'admin' && <div className="flex justify-end"><button onClick={() => void handleDelete(item)} disabled={busyId === item.id} className="btn-ghost border border-red-200 px-2.5 text-xs text-red-600"><Trash2 className="h-3.5 w-3.5" />Hapus</button></div>}
                   </div>
                 )}
               </div>

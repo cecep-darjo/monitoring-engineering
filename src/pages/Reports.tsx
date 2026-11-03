@@ -73,14 +73,10 @@ export default function Reports() {
 
     try {
       const roundIds = rounds.map((r) => r.id);
-      const dayStart = new Date(`${reportDate}T00:00:00+07:00`).toISOString();
-      const dayEnd = new Date(new Date(`${reportDate}T00:00:00+07:00`).getTime() + 24 * 60 * 60 * 1000).toISOString();
-
-      const [{ data: values }, { data: photos }, { data: parameters }, { data: workRequests }, { data: schedules }, { data: scheduleParameters }, { data: roundConclusions }] = await Promise.all([
+      const [{ data: values }, { data: photos }, { data: parameters }, { data: schedules }, { data: scheduleParameters }, { data: roundConclusions }] = await Promise.all([
         supabase.from('monitoring_values').select('*').in('round_id', roundIds),
         supabase.from('monitoring_photos').select('*').in('round_id', roundIds),
         supabase.from('parameters').select('*'),
-        supabase.from('work_requests').select('*').gte('created_at', dayStart).lt('created_at', dayEnd).order('created_at'),
         supabase.from('schedules').select('id, machine_id, shift_number, round_number').eq('is_active', true),
         supabase.from('schedule_parameters').select('schedule_id, parameter_id, sort_order, depends_on_parameter_id, depends_on_value'),
         supabase.from('round_conclusions').select('*').eq('monitoring_date', reportDate),
@@ -94,16 +90,6 @@ export default function Reports() {
         photoUrls[photo.id] = data.publicUrl;
       }
 
-      const workRequestIds = (workRequests || []).map((w) => w.id);
-      const { data: workRequestPhotos } = workRequestIds.length
-        ? await supabase.from('work_request_photos').select('*').in('work_request_id', workRequestIds)
-        : { data: [] };
-      const workRequestPhotoUrls: Record<string, string> = {};
-      for (const photo of workRequestPhotos || []) {
-        const { data } = await supabase.storage.from(STORAGE_BUCKET).getPublicUrl(photo.storage_path);
-        workRequestPhotoUrls[photo.id] = data.publicUrl;
-      }
-
       await generateReportPDF({
         date: reportDate,
         rounds: rounds,
@@ -111,9 +97,6 @@ export default function Reports() {
         photos: photos || [],
         photoUrls,
         parameters: parameters || [],
-        workRequests: workRequests || [],
-        workRequestPhotos: workRequestPhotos || [],
-        workRequestPhotoUrls,
         schedules: schedules || [],
         scheduleParameters: scheduleParameters || [],
         roundConclusions: roundConclusions || [],

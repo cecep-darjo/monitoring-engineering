@@ -128,8 +128,12 @@ export interface WorkRequest {
   technician_name: string;
   title: string;
   requested_by: string;
-  description: string;
-  status: 'completed' | 'in_progress';
+  description: string | null;
+  scheduled_date: string | null;
+  shift_number: number | null;
+  round_number: number | null;
+  status: 'pending' | 'in_progress' | 'completed';
+  completed_at: string | null;
   created_at: string;
 }
 
