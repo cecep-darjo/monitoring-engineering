@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+import { supabase, FUNCTIONS_URL } from './supabase';
 import type { Profile } from './types';
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
@@ -125,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (username: string, password: string, fullName: string) => {
     // Call edge function which uses service role key to bypass password strength check
-    const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/create-user`;
+    const apiUrl = `${FUNCTIONS_URL}/create-user`;
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {

@@ -12,7 +12,7 @@ import {
   XCircle,
   AtSign,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { supabase, FUNCTIONS_URL } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import type { Profile, UserRole } from '@/lib/types';
 
@@ -104,7 +104,7 @@ export default function AdminUsers() {
         }
 
         // Call edge function which uses service role key to bypass password strength check
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/create-user`;
+        const apiUrl = `${FUNCTIONS_URL}/create-user`;
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -174,7 +174,7 @@ export default function AdminUsers() {
 
     setDeletingId(user.id);
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/delete-user`;
+      const apiUrl = `${FUNCTIONS_URL}/delete-user`;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {

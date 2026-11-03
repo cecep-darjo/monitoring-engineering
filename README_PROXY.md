@@ -9,13 +9,20 @@ internet** tetap bisa menjalankan aplikasi Equipment Monitor secara penuh
 
 Aplikasi dibuat dengan mode **local-proxy**:
 
-1. Saat build, `VITE_SUPABASE_URL` dikosongkan. Kode `src/lib/supabase.ts`
-   punya fallback:
+1. Saat build, `server/build-local-proxy.ps1` men-set `VITE_USE_LOCAL_PROXY=true`.
+   Kode `src/lib/supabase.ts` memakai flag itu:
    ```ts
-   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || window.location.origin;
+   const useLocalProxy = import.meta.env.VITE_USE_LOCAL_PROXY === 'true';
+   const supabaseUrl = useLocalProxy ? window.location.origin : (VITE_SUPABASE_URL || window.location.origin);
    ```
    Jadi `supabaseUrl` menjadi **asal halaman** (yaitu `http://<IP-proxy>:<port>`)
    di komputer lain.
+
+   > Jangan mengosongkan `VITE_SUPABASE_URL` untuk tujuan ini. Di Windows PowerShell,
+   > `$env:VITE_SUPABASE_URL = ''` justru **menghapus** variabel tersebut, sehingga Vite
+   > memakai nilai dari file `.env` (URL Supabase asli). Bundle lalu menembak
+   > `*.supabase.co` langsung dan komputer tanpa internet menampilkan
+   > **"Network Error when attempting to fetch resource"**.
 2. Server `server/proxy-server.mjs` menyajikan file build `dist/` DAN meneruskan
    semua request API ke Supabase asli:
    - `/rest/v1/*`   → PostgREST (query data)
@@ -27,9 +34,10 @@ Aplikasi dibuat dengan mode **local-proxy**:
    anon key sebagai fallback.
 
 > Catatan: pemanggilan edge function di kode (`AuthContext`, `AdminUsers`, `Reports`)
-> memakai `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}`. Karena build
-> mengosongkan `VITE_SUPABASE_URL`, hasilnya menunjuk ke proxy (`/functions/v1/...`).
-> Jadi semua jalur — REST, Auth, Storage, dan Edge Functions — konsisten lewat proxy.
+> memakai `FUNCTIONS_URL` yang diekspor dari `src/lib/supabase.ts` (diturunkan dari
+> `supabaseUrl`). Jadi pada mode local-proxy hasilnya menunjuk ke proxy
+> (`/functions/v1/...`). Jangan lagi memakai `import.meta.env.VITE_SUPABASE_URL` langsung
+> di komponen, karena nilainya masih berisi URL Supabase asli dari `.env`.
 
 ## Prasyarat
 
@@ -50,11 +58,11 @@ Lalu edit `.env.local-proxy` (nilai default dari contoh):
 SUPABASE_URL=https://xzyglfiecvmwsatpiemy.supabase.co
 ANON_KEY=sb_publishable_LfhqaupabddAgKjtTbzNAQ_uFpQ83Pr
 HOST=0.0.0.0
-PORT=4000
+PORT=8000
 ```
 
 - `HOST=0.0.0.0` berarti didengar di semua antarmuka (wajib agar terjangkau LAN).
-- `PORT=4000` port prost. Bisa diganti (mis. 80 jika ingin tanpa port di URL).
+- `PORT=8000` port proxy. Bisa diganti (mis. 80 jika ingin tanpa port di URL).
 
 ## 2) Bangun aplikasi dalam mode local-proxy
 
@@ -66,7 +74,7 @@ npm run build:proxy
 
 Perintah ini menjalankan `server/build-local-proxy.ps1`, yang:
 - membaca `.env.local-proxy`,
-- mengosongkan `VITE_SUPABASE_URL`,
+- men-set `VITE_USE_LOCAL_PROXY=true` (supaya client memakai origin proxy),
 - mengisi `VITE_SUPABASE_ANON_KEY`,
 - lalu menjalankan `npm run build` → menghasilkan folder `dist/`.
 
@@ -77,7 +85,7 @@ File itu otomatis:
 - membuat salinan `.env.local-proxy` dari contoh bila belum ada,
 - memasang dependensi bila belum ada,
 - membangun `dist/` bila belum ada,
-- lalu menjalankan proxy pada port yang dibaca dari `.env.local-proxy` (default `4000`).
+- lalu menjalankan proxy pada port yang dibaca dari `.env.local-proxy` (default `8000`).
 
 Atau secara manual (di PowerShell):
 ```
@@ -90,7 +98,7 @@ node server/proxy-server.mjs
 
 Anda akan melihat ringkasan seperti:
 ```
-  Proxy listen: http://0.0.0.0:4000
+  Proxy listen: http://0.0.0.0:8000
 ```
 
 ## 4) Biarkan komputer lain mengakses
@@ -101,7 +109,7 @@ Anda akan melihat ringkasan seperti:
 - Di komputer lain (tanpa internet), buka browser dan akses:
 
   ```
-  http://192.168.1.50:4000
+  http://192.168.1.50:8000
   ```
 
   (ganti IP dan port sesuai milik Anda).
@@ -110,7 +118,7 @@ Anda akan melihat ringkasan seperti:
 
 | Gejala | Penyebab / Solusi |
 |---|---|
-| Halaman tidak terbuka di komputer lain | Firewall Windows memblokir port. Buka port TCP 4000 (atau port yang dipakai) di Windows Firewall, atau gunakan `netsh advfirewall firewall add rule name="monitor-proxy" dir=in action=allow protocol=TCP localport=4000`. |
+| Halaman tidak terbuka di komputer lain | Firewall Windows memblokir port. Buka port TCP 8000 (atau port yang dipakai) di Windows Firewall, atau gunakan `netsh advfirewall firewall add rule name="monitor-proxy" dir=in action=allow protocol=TCP localport=8000`. |
 | Login gagal / data kosong | Pastikan `.env.local-proxy` benar dan proxy berhasil terkoneksi. Cek log terminal proxy untuk error backend. |
 | Foto tidak tampil | Beberapa bucket storage perlu akses anon. Pastikan `ANON_KEY` benar di `.env.local-proxy`. |
 | Port sudah terpakai | Ganti `PORT` di `.env.local-proxy`, lalu jalankan ulang. |

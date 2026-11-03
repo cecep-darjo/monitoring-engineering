@@ -5,12 +5,12 @@ Yang dibutuhkan hanya Node.js (LTS) di komputer PROXY (yang punya internet).
 
 LANGKAH
 1. Extract folder ini di komputer yang punya internet.
-2. Klik dua kali JALANKAN.bat. Catat alamat IP yang tampil (contoh http://192.168.1.50:4000).
+2. Klik dua kali JALANKAN.bat. Catat alamat IP yang tampil (contoh http://192.168.1.50:8000).
 3. Di komputer lain (tanpa internet, satu jaringan LAN), buka alamat itu di browser.
 
 JIKA KOMPUTER LAIN TIDAK BISA MEMBUKA
-Buka port 4000 di Windows Firewall. Jalankan CMD sebagai Administrator:
-  netsh advfirewall firewall add rule name="monitor-proxy" dir=in action=allow protocol=TCP localport=4000
+Buka port 8000 di Windows Firewall. Jalankan CMD sebagai Administrator:
+  netsh advfirewall firewall add rule name="monitor-proxy" dir=in action=allow protocol=TCP localport=8000
 
 UBAH PORT / PROJECT SUPABASE
 Edit .env.local-proxy (simpan sebagai UTF-8 tanpa BOM). Ubah PORT atau SUPABASE_URL

@@ -53,11 +53,17 @@ if (-not $env:VITE_SUPABASE_ANON_KEY) {
   Write-Error 'VITE_SUPABASE_ANON_KEY tidak ditemukan. Isi ANON_KEY di .env.local-proxy terlebih dahulu.'
 }
 
-# ------- 3. Kekosongkan VITE_SUPABASE_URL agar pakai window.location.origin -------
-$env:VITE_SUPABASE_URL = ''
+# ------- 3. Aktifkan mode local-proxy -------
+# PENTING: JANGAN mengosongkan VITE_SUPABASE_URL. Di Windows PowerShell, assignment
+# `$env:VITE_SUPABASE_URL = ''` malah MENGHAPUS variabel tersebut, sehingga Vite akan
+# memakai nilai dari file .env (URL Supabase asli). Akibatnya bundle tetap menembak
+# *.supabase.co langsung dan komputer tanpa internet mendapat "Network Error".
+# Karena itu build ini memakai flag VITE_USE_LOCAL_PROXY=true (lihat src/lib/supabase.ts).
+$env:VITE_USE_LOCAL_PROXY = 'true'
 
 Write-Host ""
-Write-Host "  VITE_SUPABASE_URL        : (kosong -> window.location.origin = proxy)"
+Write-Host "  Mode build               : LOCAL-PROXY (pakai window.location.origin)"
+Write-Host "  VITE_USE_LOCAL_PROXY     : true"
 Write-Host "  VITE_SUPABASE_ANON_KEY   : (terisi, dibakar ke bundle)"
 if ($env:SUPABASE_URL) {
   Write-Host "  Backend Supabase (proxy)  : $($env:SUPABASE_URL)"

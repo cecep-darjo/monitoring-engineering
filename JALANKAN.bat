@@ -18,7 +18,7 @@ if not defined NODE (
 
 echo.
 echo Alamat yang dibuka di komputer lain ^(pilih IP jaringan LAN yang sesuai^):
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do echo    http://%%a:4000
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do echo    http://%%a:8000
 echo.
 echo Biarkan jendela ini tetap terbuka. Tutup jendela / Ctrl+C untuk berhenti.
 echo.

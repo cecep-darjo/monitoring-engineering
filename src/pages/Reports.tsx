@@ -9,7 +9,7 @@ import {
   X,
   Mail,
 } from 'lucide-react';
-import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
+import { supabase, STORAGE_BUCKET, FUNCTIONS_URL } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import {
   SHIFT_SHORT,
@@ -135,7 +135,7 @@ export default function Reports() {
     setSendingEmail(true);
     setEmailResult(null);
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL || window.location.origin}/functions/v1/send-shift-report`;
+      const apiUrl = `${FUNCTIONS_URL}/send-shift-report`;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {

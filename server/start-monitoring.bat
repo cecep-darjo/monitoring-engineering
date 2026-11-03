@@ -49,7 +49,7 @@ if not exist ".env.local-proxy" (
 )
 
 REM ---------- Baca PORT + SUPABASE_URL ----------
-set "PORT=4000"
+set "PORT=8000"
 set "SUPABASE_URL="
 for /f "usebackq tokens=1,* delims==" %%a in (".env.local-proxy") do (
   set "_key=%%a"
@@ -62,7 +62,7 @@ if "!SUPABASE_URL!"=="" (
   echo     Edit .env.local-proxy dan pastikan ada baris seperti:
   echo         SUPABASE_URL=https://xxxx.supabase.co
   echo         ANON_KEY=sb_publishable_......
-  echo         PORT=4000
+  echo         PORT=8000
   pause
   exit /b 1
 )

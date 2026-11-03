@@ -26,7 +26,7 @@ Important business constraints recorded in migrations and `README_PERUBAHAN.txt`
 
 ## Local proxy deployment
 
-`README_PROXY.md` documents offline-LAN-client mode. `npm run build:proxy` runs `server/build-local-proxy.ps1`; the Node server `server/proxy-server.mjs` serves `dist/` and forwards `/rest/v1`, `/auth/v1`, `/storage/v1`, and `/functions/v1` to Supabase. `server/start-monitoring.bat` starts the proxy; default port is 4000. `.env.local-proxy` configures the upstream and should not be committed. `BACA-DULU.txt` is the quick start guide.
+`README_PROXY.md` documents offline-LAN-client mode. `npm run build:proxy` runs `server/build-local-proxy.ps1`; the Node server `server/proxy-server.mjs` serves `dist/` and forwards `/rest/v1`, `/auth/v1`, `/storage/v1`, and `/functions/v1` to Supabase. `server/start-monitoring.bat` starts the proxy; default port is 8000. `.env.local-proxy` configures the upstream and should not be committed. `BACA-DULU.txt` is the quick start guide.
 
 ## Useful commands
 
