@@ -122,7 +122,7 @@ export default function AdminMachines() {
         .eq('id', editing.id);
       if (err) saveError = err.message;
     } else {
-      const { error: err } = await supabase.from('machines').insert(payload);
+      const { error: err } = await supabase.from('machines').insert({ ...payload, is_active: false });
       if (err) saveError = err.message;
     }
 
