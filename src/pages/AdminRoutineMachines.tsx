@@ -44,19 +44,14 @@ export default function AdminRoutineMachines() {
           <h1 className="text-2xl font-bold text-slate-900">Machine Rutin</h1>
           <p className="mt-1 text-sm text-slate-500">Daftar ini hanya berisi mesin berbadge Rutin. Status aktif mengikuti status Machine reguler.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => void setAllActive(true)} disabled={busy || machines.length === 0} className="btn-primary">
-            <Power className="h-4 w-4" /> Aktifkan Semua
-          </button>
-          <button onClick={() => void setAllActive(false)} disabled={busy || machines.length === 0} className="btn-secondary">
-            <PowerOff className="h-4 w-4" /> Nonaktifkan Semua
-          </button>
-        </div>
       </div>
 
-      <div className="card flex items-center gap-3 p-4">
-        <CheckCircle2 className="h-5 w-5 text-teal-600" />
-        <p className="text-sm text-slate-600"><strong className="text-slate-900">{activeCount}</strong> dari {machines.length} mesin rutin aktif</p>
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-teal-600" /><p className="text-sm text-slate-600"><strong className="text-slate-900">{activeCount}</strong> dari {machines.length} mesin rutin aktif</p></div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => void setAllActive(true)} disabled={busy || machines.length === 0} className="btn-primary"><Power className="h-4 w-4" /> Aktifkan Semua</button>
+          <button onClick={() => void setAllActive(false)} disabled={busy || machines.length === 0} className="btn-secondary"><PowerOff className="h-4 w-4" /> Nonaktifkan Semua</button>
+        </div>
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
