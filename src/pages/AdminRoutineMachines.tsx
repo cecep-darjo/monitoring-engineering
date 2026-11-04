@@ -24,15 +24,6 @@ export default function AdminRoutineMachines() {
     setLoading(false);
   }
 
-  async function setMachineActive(machine: Machine, isActive: boolean) {
-    setBusy(true);
-    setError(null);
-    const { error: saveError } = await supabase.from('machines').update({ is_active: isActive }).eq('id', machine.id);
-    if (saveError) setError(saveError.message);
-    else setMachines((current) => current.map((item) => item.id === machine.id ? { ...item, is_active: isActive } : item));
-    setBusy(false);
-  }
-
   async function setAllActive(isActive: boolean) {
     if (machines.length === 0) return;
     setBusy(true);
@@ -78,7 +69,7 @@ export default function AdminRoutineMachines() {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr><th className="px-5 py-3">Machine</th><th className="px-5 py-3">Lokasi</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Aksi</th></tr>
+                <tr><th className="px-5 py-3">Machine</th><th className="px-5 py-3">Lokasi</th><th className="px-5 py-3">Status</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {machines.map((machine) => (
@@ -86,12 +77,6 @@ export default function AdminRoutineMachines() {
                     <td className="px-5 py-4"><div className="font-medium text-slate-900">{machine.name}</div><div className="mt-0.5 text-xs text-slate-400">{machine.code}</div></td>
                     <td className="px-5 py-4 text-slate-500">{machine.location || '—'}</td>
                     <td className="px-5 py-4"><span className={`badge ${machine.is_active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>{machine.is_active ? 'Aktif' : 'Nonaktif'}</span></td>
-                    <td className="px-5 py-4 text-right">
-                      <button onClick={() => void setMachineActive(machine, !machine.is_active)} disabled={busy} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50 ${machine.is_active ? 'border border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-teal-600 text-white hover:bg-teal-700'}`}>
-                        {machine.is_active ? <PowerOff className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                        {machine.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
