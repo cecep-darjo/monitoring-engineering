@@ -72,6 +72,18 @@
   animation: slideIn 0.2s ease-out;
 }
 
+@keyframes announcementBlink {
+  50% { opacity: 0.3; }
+}
+
+.announcement-blink {
+  animation: announcementBlink 1.15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .announcement-blink { animation: none; }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

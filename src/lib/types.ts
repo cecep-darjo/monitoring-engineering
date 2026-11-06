@@ -10,6 +10,15 @@ export interface Profile {
   created_at: string;
 }
 
+export interface Announcement {
+  id: string;
+  message: string;
+  publish_at: string;
+  created_by: string | null;
+  created_at: string;
+  is_active: boolean;
+}
+
 export interface Machine {
   id: string;
   name: string;

@@ -8,6 +8,8 @@ import {
   Cog,
   TrendingUp,
   Calendar,
+  CalendarClock,
+  Megaphone,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import {
@@ -16,6 +18,7 @@ import {
   SHIFT_SHORT,
   type Machine,
   type MonitoringRound,
+  type Announcement,
 } from '@/lib/types';
 import type { PageKey } from '@/components/Layout';
 
@@ -26,6 +29,7 @@ interface DashboardProps {
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [todayRounds, setTodayRounds] = useState<MonitoringRound[]>([]);
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [stats, setStats] = useState({ total: 0, normal: 0, warning: 0, abnormal: 0 });
   const [abnormalList, setAbnormalList] = useState<
     { id: string; parameter_name: string; value: string | null; unit: string | null; machine_name: string; shift_number: number; round_number: number }[]
@@ -45,17 +49,20 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   useEffect(() => {
     async function loadData() {
-      const [{ data: machinesData }, { data: roundsData }] = await Promise.all([
+      const [{ data: machinesData }, { data: roundsData }, { data: announcementData }] = await Promise.all([
         supabase.from('machines').select('*').eq('is_active', true).order('name'),
         supabase
           .from('monitoring_rounds')
           .select('*')
           .eq('monitoring_date', today)
           .order('created_at', { ascending: false }),
+        supabase.from('announcements').select('*').eq('is_active', true)
+          .lte('publish_at', new Date().toISOString()).order('publish_at', { ascending: false }).limit(1),
       ]);
 
       setMachines(machinesData || []);
       setTodayRounds(roundsData || []);
+      setAnnouncement((announcementData?.[0] as Announcement | undefined) || null);
 
       if (roundsData && roundsData.length > 0) {
         const roundIds = roundsData.map((r) => r.id);
@@ -95,6 +102,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     loadData();
   }, [today]);
 
+  useEffect(() => {
+    const interval = window.setInterval(async () => {
+      const { data } = await supabase.from('announcements').select('*').eq('is_active', true)
+        .lte('publish_at', new Date().toISOString()).order('publish_at', { ascending: false }).limit(1);
+      setAnnouncement((data?.[0] as Announcement | undefined) || null);
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const shiftRounds = (shift: number) =>
     todayRounds.filter((r) => r.shift_number === shift);
 
@@ -128,6 +144,19 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           New Monitoring
         </button>
       </div>
+
+      {announcement && (
+        <section className="rounded-xl border border-teal-200 border-l-4 border-l-teal-600 bg-teal-50/80 p-4 sm:p-5" aria-label="Pengumuman">
+          <h2 className="announcement-blink mb-2 flex items-center gap-2 text-sm font-bold tracking-wide text-teal-800">
+            <Megaphone className="h-4 w-4" /> Pengumuman
+          </h2>
+          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">{announcement.message}</p>
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
+            <CalendarClock className="h-3.5 w-3.5" />
+            {new Date(announcement.publish_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}
+          </p>
+        </section>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

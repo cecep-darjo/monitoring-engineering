@@ -20,6 +20,7 @@ import {
   ClipboardCheck,
   Bell,
   Clock3,
+  Megaphone,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -35,6 +36,7 @@ export type PageKey =
   | 'admin-machines'
   | 'admin-holiday-machines'
   | 'admin-routine-machines'
+  | 'admin-announcements'
   | 'admin-parameters'
   | 'admin-schedules'
   | 'admin-users'
@@ -58,6 +60,7 @@ const navItems: NavItem[] = [
   { key: 'admin-machines', label: 'Machines', icon: Cog, adminOnly: true },
   { key: 'admin-holiday-machines', label: 'Machine For Holiday', icon: CalendarDays, adminOnly: true },
   { key: 'admin-routine-machines', label: 'Machine Rutin', icon: ClipboardCheck, adminOnly: true },
+  { key: 'admin-announcements', label: 'Pengumuman', icon: Megaphone, adminOnly: true },
   { key: 'admin-parameters', label: 'Parameters', icon: Settings, adminOnly: true },
   { key: 'admin-schedules', label: 'Schedules', icon: CalendarClock, adminOnly: true },
   { key: 'admin-users', label: 'Users', icon: Users, adminOnly: true },
