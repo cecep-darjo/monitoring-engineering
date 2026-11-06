@@ -14,6 +14,7 @@ export default function AdminAnnouncements() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [message, setMessage] = useState('');
   const [publishAt, setPublishAt] = useState(() => localDateTimeValue());
+  const [endAt, setEndAt] = useState(() => localDateTimeValue(new Date(Date.now() + 24 * 60 * 60 * 1000)));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -35,17 +36,23 @@ export default function AdminAnnouncements() {
       setError('Pesan dan tanggal/jam tampil wajib diisi.');
       return;
     }
+    if (!endAt || new Date(endAt).getTime() <= new Date(publishAt).getTime()) {
+      setError('Tanggal dan jam akhir harus setelah waktu tampil.');
+      return;
+    }
     setSaving(true);
     setError(null);
     const { error: insertError } = await supabase.from('announcements').insert({
       message: message.trim(),
       publish_at: new Date(publishAt).toISOString(),
+      end_at: new Date(endAt).toISOString(),
       created_by: profile.id,
     });
     if (insertError) setError(insertError.message);
     else {
       setMessage('');
       setPublishAt(localDateTimeValue());
+      setEndAt(localDateTimeValue(new Date(Date.now() + 24 * 60 * 60 * 1000)));
       await loadAnnouncements();
     }
     setSaving(false);
@@ -80,9 +87,13 @@ export default function AdminAnnouncements() {
           <label className="label-text" htmlFor="announcement-publish-at">Tanggal dan jam tampil</label>
           <input id="announcement-publish-at" type="datetime-local" value={publishAt} onChange={(event) => setPublishAt(event.target.value)} className="input-field" />
         </div>
+        <div className="max-w-sm">
+          <label className="label-text" htmlFor="announcement-end-at">Tanggal dan jam berakhir</label>
+          <input id="announcement-end-at" type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} className="input-field" />
+        </div>
         {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
         <div className="flex justify-end">
-          <button onClick={() => void handleCreate()} disabled={saving || !message.trim() || !publishAt} className="btn-primary">
+          <button onClick={() => void handleCreate()} disabled={saving || !message.trim() || !publishAt || !endAt} className="btn-primary">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Simpan Pengumuman
           </button>
         </div>
@@ -101,7 +112,7 @@ export default function AdminAnnouncements() {
               <div className="min-w-0 flex-1">
                 <span className={`badge ${isUpcoming ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{isUpcoming ? 'Terjadwal' : 'Tampil'}</span>
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">{announcement.message}</p>
-                <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" />{new Date(announcement.publish_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}</p>
+                <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-500"><CalendarClock className="h-3.5 w-3.5" /><span>Tampil: {new Date(announcement.publish_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}</span><span>·</span><span>Berakhir: {announcement.end_at ? new Date(announcement.end_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : 'Belum diatur'}</span></p>
               </div>
               <button onClick={() => void handleDelete(announcement)} disabled={deletingId === announcement.id} className="btn-ghost self-end border border-red-200 px-3 text-xs text-red-600 sm:self-start" aria-label="Hapus pengumuman">
                 {deletingId === announcement.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Hapus

@@ -57,12 +57,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           .eq('monitoring_date', today)
           .order('created_at', { ascending: false }),
         supabase.from('announcements').select('*').eq('is_active', true)
-          .lte('publish_at', new Date().toISOString()).order('publish_at', { ascending: false }).limit(1),
+          .lte('publish_at', new Date().toISOString())
+          .order('publish_at', { ascending: false }).limit(1),
       ]);
 
       setMachines(machinesData || []);
       setTodayRounds(roundsData || []);
-      setAnnouncement((announcementData?.[0] as Announcement | undefined) || null);
+      const currentAnnouncement = announcementData?.[0] as Announcement | undefined;
+      setAnnouncement(currentAnnouncement && (!currentAnnouncement.end_at || new Date(currentAnnouncement.end_at).getTime() > Date.now()) ? currentAnnouncement : null);
 
       if (roundsData && roundsData.length > 0) {
         const roundIds = roundsData.map((r) => r.id);
@@ -105,8 +107,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   useEffect(() => {
     const interval = window.setInterval(async () => {
       const { data } = await supabase.from('announcements').select('*').eq('is_active', true)
-        .lte('publish_at', new Date().toISOString()).order('publish_at', { ascending: false }).limit(1);
-      setAnnouncement((data?.[0] as Announcement | undefined) || null);
+        .lte('publish_at', new Date().toISOString())
+        .order('publish_at', { ascending: false }).limit(1);
+      const currentAnnouncement = data?.[0] as Announcement | undefined;
+      setAnnouncement(currentAnnouncement && (!currentAnnouncement.end_at || new Date(currentAnnouncement.end_at).getTime() > Date.now()) ? currentAnnouncement : null);
     }, 60_000);
     return () => window.clearInterval(interval);
   }, []);
@@ -153,7 +157,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">{announcement.message}</p>
           <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
             <CalendarClock className="h-3.5 w-3.5" />
-            {new Date(announcement.publish_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}
+            <span>Tampil: {new Date(announcement.publish_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}</span>
+            {announcement.end_at && <><span>·</span><span>Berakhir: {new Date(announcement.end_at).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}</span></>}
           </p>
         </section>
       )}
