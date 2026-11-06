@@ -77,6 +77,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
   const [conclusionSaving, setConclusionSaving] = useState(false);
   const [conclusionSaved, setConclusionSaved] = useState(false);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const cameraInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [adminOverride, setAdminOverride] = useState(false);
 
   useEffect(() => {
@@ -925,29 +926,42 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
                     className="input-field mt-3 text-sm"
                   />
 
-                  {/* Photo Upload — only shown for parameters the admin has enabled;
-                      still optional even when shown, technician can submit without a photo. */}
+                  {/* Photo evidence controls are shown for parameters with photo_required enabled. */}
                   {p.parameter.photo_required && (
                   <div className="mt-3">
-                    <p className="text-xs font-medium text-slate-500 mb-1.5">Upload Foto (opsional)</p>
+                    <p className="text-xs font-medium text-slate-500 mb-1.5">Foto Bukti (opsional)</p>
                     <input
                       ref={(el) => { fileInputRefs.current[p.parameter.id] = el; }}
                       type="file"
                       accept="image/*"
                       multiple
-                      onChange={(e) => handleFileSelect(idx, e.target.files)}
+                      onChange={(e) => { handleFileSelect(idx, e.target.files); e.target.value = ''; }}
+                      className="hidden"
+                    />
+                    <input
+                      ref={(el) => { cameraInputRefs.current[p.parameter.id] = el; }}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => { handleFileSelect(idx, e.target.files); e.target.value = ''; }}
                       className="hidden"
                     />
                     {p.existingPhotos.length === 0 && p.photos.length === 0 ? (
-                      <div>
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <button
-                          onClick={() => fileInputRefs.current[p.parameter.id]?.click()}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border-2 border-dashed border-slate-200 text-slate-400 text-sm hover:border-teal-400 hover:text-teal-500 transition-all"
+                          onClick={() => cameraInputRefs.current[p.parameter.id]?.click()}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-lg border-2 border-dashed border-teal-200 py-2.5 text-sm text-teal-700 transition-all hover:border-teal-400 hover:bg-teal-50"
                         >
                           <Camera className="w-4 h-4" />
-                          Upload Photos
+                          Ambil Foto
                         </button>
-                        <p className="text-[10px] text-slate-400 mt-1 text-center">Maks. 500KB per foto</p>
+                        <button
+                          onClick={() => fileInputRefs.current[p.parameter.id]?.click()}
+                          className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-200 py-2.5 text-sm text-slate-600 transition-all hover:border-teal-400 hover:text-teal-700"
+                        >
+                          <Upload className="w-4 h-4" />
+                          Pilih dari Galeri
+                        </button>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -987,15 +1001,23 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
                             </div>
                           ))}
                         </div>
-                        <button
-                          onClick={() => fileInputRefs.current[p.parameter.id]?.click()}
-                          className="text-xs text-teal-600 hover:text-teal-700 font-medium flex items-center gap-1"
-                        >
-                          <Upload className="w-3 h-3" />
-                          Add more
-                        </button>
+                        <div className="flex flex-wrap gap-3">
+                          <button
+                            onClick={() => cameraInputRefs.current[p.parameter.id]?.click()}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800"
+                          >
+                            <Camera className="h-3.5 w-3.5" /> Ambil foto lagi
+                          </button>
+                          <button
+                            onClick={() => fileInputRefs.current[p.parameter.id]?.click()}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800"
+                          >
+                            <Upload className="h-3.5 w-3.5" /> Pilih dari galeri
+                          </button>
+                        </div>
                       </div>
                     )}
+                    <p className="mt-1 text-[10px] text-slate-400">Maks. 500KB per foto</p>
                   </div>
                   )}
                 </div>
