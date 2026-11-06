@@ -419,24 +419,26 @@ export default function WorkRequests() {
             const statusClass = displayStatus === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : displayStatus === 'in_progress' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-amber-200 bg-amber-50 text-amber-700';
             return (
               <div key={item.id} className="card overflow-hidden">
-                <div className="flex items-start gap-3 p-4">
-                  <button onClick={() => setExpandedId(isExpanded ? null : item.id)} className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-slate-900">{item.title}</p><span className={`badge ${statusClass}`}>{statusLabel}</span></div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                        <span className="inline-flex items-center gap-1"><User className="h-3 w-3" />Peminta: {item.requested_by}</span>
-                        <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(item.scheduled_date)} · Shift {item.shift_number ?? '-'} · Round {item.round_number ?? '-'}</span>
-                        <span>Teknisi: {item.technician_name}</span>
-                        {item.status === 'completed' && <span>Selesai: {new Date(item.completed_at || item.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+                <div className="space-y-3 p-4">
+                  <button onClick={() => setExpandedId(isExpanded ? null : item.id)} className="flex w-full min-w-0 items-start justify-between gap-3 text-left">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2"><p className="break-words text-sm font-semibold leading-5 text-slate-900">{item.title}</p><span className={`badge ${statusClass} shrink-0`}>{statusLabel}</span></div>
+                      <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1.5 text-sm leading-5 text-slate-600 sm:grid-cols-2">
+                        <span className="inline-flex min-w-0 items-start gap-1.5"><User className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="break-words">Peminta: {item.requested_by}</span></span>
+                        <span className="inline-flex min-w-0 items-start gap-1.5"><Calendar className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-400" /><span>{formatDate(item.scheduled_date)} · Shift {item.shift_number ?? '-'} · Round {item.round_number ?? '-'}</span></span>
+                        <span className="break-words">Teknisi: {item.technician_name}</span>
+                        {item.status === 'completed' && <span className="break-words">Selesai: {new Date(item.completed_at || item.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>}
                       </div>
                     </div>
                     {isExpanded ? <ChevronUp className="mt-1 h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-slate-400" />}
                   </button>
-                  {item.status === 'pending' && displayStatus === 'pending' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary shrink-0 px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock3 className="h-3.5 w-3.5" />} Mulai</button>}
-                  {item.status === 'in_progress' && <button onClick={() => { setExpandedId(item.id); setCompletionId(isCompleting ? null : item.id); if (!isCompleting) { setWorkDetail(item.description || ''); setEvidenceFiles([]); } setActionError(null); }} className="btn-primary shrink-0 px-3 py-2 text-xs"><CheckCircle2 className="h-3.5 w-3.5" /> Selesaikan</button>}
-                  {item.status === 'pending' && displayStatus === 'in_progress' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary shrink-0 px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Lengkapi</button>}
-                  <button onClick={() => editingId === item.id ? setEditingId(null) : beginEdit(item)} className="btn-ghost shrink-0 border border-slate-200 px-2.5 text-xs" title="Edit titipan"><Edit2 className="h-3.5 w-3.5" /> Edit</button>
-                  {profile?.role === 'admin' && <button onClick={() => void handleDelete(item)} disabled={busyId === item.id} title="Hapus titipan" className="btn-ghost shrink-0 border border-red-200 px-2.5 text-xs text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>}
+                  <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                    {item.status === 'pending' && displayStatus === 'pending' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Clock3 className="h-3.5 w-3.5" />} Mulai</button>}
+                    {item.status === 'in_progress' && <button onClick={() => { setExpandedId(item.id); setCompletionId(isCompleting ? null : item.id); if (!isCompleting) { setWorkDetail(item.description || ''); setEvidenceFiles([]); } setActionError(null); }} className="btn-primary px-3 py-2 text-xs"><CheckCircle2 className="h-3.5 w-3.5" /> Selesaikan</button>}
+                    {item.status === 'pending' && displayStatus === 'in_progress' && <button onClick={() => void startWork(item)} disabled={busyId === item.id} className="btn-primary px-3 py-2 text-xs">{busyId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Lengkapi</button>}
+                    <button onClick={() => editingId === item.id ? setEditingId(null) : beginEdit(item)} className="btn-ghost border border-slate-200 px-3 py-2 text-xs" title="Edit titipan"><Edit2 className="h-3.5 w-3.5" /> Edit</button>
+                    {profile?.role === 'admin' && <button onClick={() => void handleDelete(item)} disabled={busyId === item.id} title="Hapus titipan" aria-label="Hapus titipan" className="btn-ghost border border-red-200 px-3 py-2 text-xs text-red-600"><Trash2 className="h-3.5 w-3.5" /> Hapus</button>}
+                  </div>
                 </div>
                 {isExpanded && (
                   <div className="space-y-3 border-t border-slate-100 px-4 pb-4 pt-3">
