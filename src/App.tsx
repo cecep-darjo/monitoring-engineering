@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import LoginPage from '@/pages/LoginPage';
 import Layout, { type PageKey } from '@/components/Layout';
@@ -19,9 +19,45 @@ import AuditTrail from '@/pages/AuditTrail';
 import TrendAnalysis from '@/pages/TrendAnalysis';
 import { Settings } from 'lucide-react';
 
+const PAGE_HISTORY_KEY = 'monitoringEngineeringPage';
+const PAGE_KEYS: PageKey[] = [
+  'dashboard', 'new-monitoring', 'history', 'report', 'trend-analysis', 'work-requests',
+  'admin-machines', 'admin-holiday-machines', 'admin-routine-machines', 'admin-announcements',
+  'admin-parameters', 'admin-schedules', 'admin-users', 'admin-report-recipients', 'admin-audit-trail',
+];
+
+function isPageKey(value: unknown): value is PageKey {
+  return typeof value === 'string' && PAGE_KEYS.includes(value as PageKey);
+}
+
 function AppContent() {
   const { user, profile, loading } = useAuth();
-  const [page, setPage] = useState<PageKey>('dashboard');
+  const [page, setPage] = useState<PageKey>(() => {
+    const savedPage = window.history.state?.[PAGE_HISTORY_KEY];
+    return isPageKey(savedPage) ? savedPage : 'dashboard';
+  });
+
+  useEffect(() => {
+    if (!isPageKey(window.history.state?.[PAGE_HISTORY_KEY])) {
+      window.history.replaceState({ ...window.history.state, [PAGE_HISTORY_KEY]: page }, '', window.location.href);
+    }
+    const handlePopState = (event: PopStateEvent) => {
+      const previousPage = event.state?.[PAGE_HISTORY_KEY];
+      setPage(isPageKey(previousPage) ? previousPage : 'dashboard');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  function navigateToPage(nextPage: PageKey) {
+    if (nextPage === page) return;
+    window.history.pushState(
+      { ...window.history.state, [PAGE_HISTORY_KEY]: nextPage },
+      '',
+      window.location.href
+    );
+    setPage(nextPage);
+  }
 
   if (loading) {
     return (
@@ -69,9 +105,9 @@ function AppContent() {
   }
 
   return (
-    <Layout current={currentPage} onNavigate={setPage}>
-      {currentPage === 'dashboard' && <Dashboard onNavigate={setPage} />}
-      {currentPage === 'new-monitoring' && <NewMonitoring onNavigate={setPage} />}
+    <Layout current={currentPage} onNavigate={navigateToPage}>
+      {currentPage === 'dashboard' && <Dashboard onNavigate={navigateToPage} />}
+      {currentPage === 'new-monitoring' && <NewMonitoring onNavigate={navigateToPage} />}
       {currentPage === 'history' && <History />}
       {currentPage === 'report' && <Reports />}
       {currentPage === 'trend-analysis' && <TrendAnalysis />}
