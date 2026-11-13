@@ -1,0 +1,16 @@
+name = "monitoring-storage"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# Bucket R2 tujuan. Nama harus sama dengan bucket yang dipakai aplikasi.
+[vars]
+R2_BUCKET = "monitoring-photos"
+# Ganti dengan domain aplikasi Anda saat produksi, mis. "https://monitor.example.com".
+ALLOWED_ORIGIN = "*"
+
+# Secrets (set via `wrangler secret put <NAMA>`):
+#   R2_ACCOUNT_ID
+#   R2_ACCESS_KEY_ID
+#   R2_SECRET_ACCESS_KEY
+#   SUPABASE_URL
+#   SUPABASE_ANON_KEY

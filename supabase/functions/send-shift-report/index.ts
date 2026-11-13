@@ -372,12 +372,21 @@ async function buildReportPdf(
     // time — this was the single biggest contributor to the function running long.
     stepTimer = time(`download-lampiran-photos (${photosToRender.length})`);
     const dataUrlByPhotoId = new Map<string, string | null>();
+    // Bila R2_PUBLIC_URL diset, foto dibaca dari Cloudflare R2 (bucket publik).
+    // Jika tidak, tetap memakai Supabase Storage seperti sebelumnya.
+    const r2Base = (Deno.env.get("R2_PUBLIC_URL") || "").trim().replace(/\/+$/, "");
     await mapWithConcurrency(photosToRender, 6, async (photo: any) => {
       let dataUrl: string | null = null;
       try {
-        const { data: fileBlob } = await supabaseAdmin.storage.from(STORAGE_BUCKET).download(photo.storage_path);
-        if (fileBlob) {
-          const buf = new Uint8Array(await fileBlob.arrayBuffer());
+        let buf: Uint8Array | null = null;
+        if (r2Base) {
+          const res = await fetch(`${r2Base}/${photo.storage_path}`);
+          if (res.ok) buf = new Uint8Array(await res.arrayBuffer());
+        } else {
+          const { data: fileBlob } = await supabaseAdmin.storage.from(STORAGE_BUCKET).download(photo.storage_path);
+          if (fileBlob) buf = new Uint8Array(await fileBlob.arrayBuffer());
+        }
+        if (buf) {
           const b64 = bytesToBase64(buf);
           const ext = (photo.storage_path.split(".").pop() || "jpg").toLowerCase();
           const mime = ext === "png" ? "image/png" : "image/jpeg";

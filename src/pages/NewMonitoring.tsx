@@ -9,7 +9,8 @@ import {
   Upload,
   Loader2,
 } from 'lucide-react';
-import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { photoUrl, removePhoto as removeStoredPhoto, uploadPhoto } from '@/lib/storage';
 import { useAuth } from '@/lib/AuthContext';
 import {
   getCurrentShiftAndRound,
@@ -287,7 +288,7 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
       const old = existingValues.find((v: any) => v.parameter_id === sp.parameter.id);
       const existingPhotos: ExistingPhoto[] = (photosByParam.get(sp.parameter.id) || []).map((photo) => ({
         ...photo,
-        url: supabase.storage.from(STORAGE_BUCKET).getPublicUrl(photo.storage_path).data.publicUrl,
+        url: photoUrl(photo.storage_path),
       }));
       return { parameter: sp.parameter as Parameter, value: old?.value || '', notes: old?.notes || '', status: old?.status || 'normal', photos: [], existingPhotos, dependsOnParameterId: sp.depends_on_parameter_id || null, dependsOnValue: sp.depends_on_value || null };
     });
@@ -458,7 +459,8 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
 
       // Remove any existing photos the technician deleted while editing this round.
       for (const dp of deletedPhotos) {
-        await supabase.storage.from(STORAGE_BUCKET).remove([dp.storage_path]);
+        const { error: removeError } = await removeStoredPhoto([dp.storage_path]);
+        if (removeError) throw new Error(removeError);
         await supabase.from('monitoring_photos').delete().eq('id', dp.id);
       }
 
@@ -490,11 +492,9 @@ export default function NewMonitoring({ onNavigate }: NewMonitoringProps) {
         for (const file of p.photos) {
           const ext = file.name.split('.').pop();
           const fileName = `${roundId}/${p.parameter.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-          const { error: uploadError } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .upload(fileName, file);
+          const { error: uploadError } = await uploadPhoto(fileName, file);
 
-          if (uploadError) throw uploadError;
+          if (uploadError) throw new Error(uploadError);
 
           const { error: photoError } = await supabase
             .from('monitoring_photos')

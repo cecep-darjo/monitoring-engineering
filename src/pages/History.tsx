@@ -13,7 +13,8 @@ import {
   Save,
   Loader2,
 } from 'lucide-react';
-import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { photoUrl } from '@/lib/storage';
 import { useAuth } from '@/lib/AuthContext';
 import {
   SHIFT_SHORT,
@@ -152,10 +153,7 @@ export default function History({}: HistoryProps) {
 
     const urls: Record<string, string> = {};
     for (const photo of photos || []) {
-      const { data } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .getPublicUrl(photo.storage_path);
-      urls[photo.id] = data.publicUrl;
+      urls[photo.id] = photoUrl(photo.storage_path);
     }
     setPhotoUrls(urls);
     setDetailLoading(false);

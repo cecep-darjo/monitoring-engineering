@@ -22,3 +22,7 @@ dist-ssr
 *.sw?
 .env
 .env.local-proxy
+.env.migrate
+storage-data
+cloudflare/worker/.wrangler
+cloudflare/worker/node_modules

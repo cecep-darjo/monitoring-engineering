@@ -3,7 +3,8 @@ import {
   Calendar, Camera, CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Edit2,
   Clock3, Loader2, Plus, Trash2, User, X,
 } from 'lucide-react';
-import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { photoUrl, removePhoto, uploadPhoto } from '@/lib/storage';
 import { useAuth } from '@/lib/AuthContext';
 import type { WorkRequest, WorkRequestPhoto } from '@/lib/types';
 
@@ -108,7 +109,7 @@ export default function WorkRequests() {
 
     const photosByRequest = new Map<string, (WorkRequestPhoto & { url: string })[]>();
     for (const photo of photoData || []) {
-      const url = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(photo.storage_path).data.publicUrl;
+      const url = photoUrl(photo.storage_path);
       if (!photosByRequest.has(photo.work_request_id)) photosByRequest.set(photo.work_request_id, []);
       photosByRequest.get(photo.work_request_id)!.push({ ...photo, url });
     }
@@ -232,8 +233,8 @@ export default function WorkRequests() {
       for (const file of evidenceFiles) {
         const ext = file.name.split('.').pop() || 'jpg';
         const path = `work-requests/${item.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file);
-        if (uploadError) throw uploadError;
+        const { error: uploadError } = await uploadPhoto(path, file);
+        if (uploadError) throw new Error(uploadError);
         uploadedPaths.push(path);
         const { data: photoRow, error: photoError } = await supabase.from('work_request_photos').insert({
           work_request_id: item.id,
@@ -257,7 +258,7 @@ export default function WorkRequests() {
       await load();
     } catch (err) {
       if (insertedPhotoIds.length) await supabase.from('work_request_photos').delete().in('id', insertedPhotoIds);
-      await Promise.all(uploadedPaths.map((path) => supabase.storage.from(STORAGE_BUCKET).remove([path])));
+      await removePhoto(uploadedPaths);
       setActionError(err instanceof Error ? err.message : 'Gagal menyelesaikan titipan pekerjaan.');
     } finally {
       setBusyId(null);
@@ -270,8 +271,8 @@ export default function WorkRequests() {
     setActionError(null);
     try {
       for (const photo of item.photos) {
-        const { error: photoError } = await supabase.storage.from(STORAGE_BUCKET).remove([photo.storage_path]);
-        if (photoError) throw photoError;
+        const { error: photoError } = await removePhoto([photo.storage_path]);
+        if (photoError) throw new Error(photoError);
       }
       const { error: deleteError } = await supabase.from('work_requests').delete().eq('id', item.id);
       if (deleteError) throw deleteError;

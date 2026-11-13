@@ -48,6 +48,22 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '')
 const ANON_KEY = (process.env.ANON_KEY || '').trim();     // Supabase anon key (untuk fallback header)
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(__dirname, '..', 'dist');
 
+// Storage di Cloudflare (opsional). Jika diisi, proxy meneruskan:
+//   /storage-api/* -> Worker (upload/delete)   |   /photos/* -> R2 public (baca)
+const STORAGE_API_URL = (process.env.STORAGE_API_URL || '').trim().replace(/\/+$/, '');
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+
+// Storage lokal di komputer proxy (tanpa Cloudflare, tanpa PostgreSQL).
+//   STORAGE_DRIVER=local  -> file disimpan di STORAGE_DIR dan disajikan lewat /photos/*
+//   STORAGE_DRIVER=supabase (default) -> tidak dipakai proxy; browser ke Supabase Storage
+//   STORAGE_DRIVER=r2 -> proxy meneruskan ke STORAGE_API_URL / R2_PUBLIC_URL
+const STORAGE_DRIVER = (process.env.STORAGE_DRIVER || 'supabase').trim().toLowerCase();
+const STORAGE_DIR = process.env.STORAGE_DIR
+  ? path.resolve(process.env.STORAGE_DIR)
+  : path.resolve(__dirname, '..', 'storage-data');
+const STORAGE_MAX_BYTES = parseInt(process.env.STORAGE_MAX_BYTES || '5242880', 10); // 5 MB default
+const STORAGE_REQUIRE_AUTH = (process.env.STORAGE_REQUIRE_AUTH || 'true').trim().toLowerCase() !== 'false';
+
 if (!SUPABASE_URL) {
   console.error('[proxy] ERROR: Environment variable SUPABASE_URL wajib diisi.');
   console.error('[proxy] Contoh (PowerShell):');
@@ -130,6 +146,165 @@ function forward(req, res, targetUrl) {
 }
 
 // ---------------------------------------------------------------------------
+// Utility: storage lokal (disk). Pengganti Supabase Storage / R2.
+// ---------------------------------------------------------------------------
+const STORAGE_MIME = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.heic': 'image/heic',
+  '.pdf': 'application/pdf',
+};
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(body));
+}
+
+/** Ubah path relatif objek menjadi path absolut di dalam STORAGE_DIR. */
+function resolveStoragePath(rawPath) {
+  if (typeof rawPath !== 'string') return null;
+  const cleaned = rawPath.trim().replace(/^\/+/, '');
+  if (!cleaned || cleaned.length > 512) return null;
+  if (cleaned.includes('\0') || cleaned.includes('\\') || cleaned.includes('..')) return null;
+  const absolute = path.resolve(STORAGE_DIR, cleaned);
+  const relative = path.relative(STORAGE_DIR, absolute);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return absolute;
+}
+
+/** Verifikasi token Supabase. Mengembalikan true bila valid / auth dimatikan. */
+async function verifySupabaseToken(req) {
+  if (!STORAGE_REQUIRE_AUTH) return true;
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) return false;
+  if (!SUPABASE_URL) return false;
+  try {
+    const upstream = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { Authorization: auth, apikey: ANON_KEY },
+    });
+    return upstream.ok;
+  } catch (err) {
+    console.error('[storage] Gagal verifikasi token:', err.message);
+    return false;
+  }
+}
+
+/** Baca body request ke Buffer dengan batas ukuran. */
+function readBody(req, limitBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limitBytes) {
+        reject(new Error(`Ukuran file melebihi batas ${Math.round(limitBytes / 1024 / 1024)} MB`));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+async function handleLocalUpload(req, res) {
+  if (!(await verifySupabaseToken(req))) {
+    return sendJson(res, 401, { error: 'Unauthorized' });
+  }
+
+  const target = new URL(req.url, 'http://localhost');
+  const objectPath = target.searchParams.get('path') || '';
+  const absolute = resolveStoragePath(objectPath);
+  if (!absolute) return sendJson(res, 400, { error: 'Path tidak valid' });
+
+  let body;
+  try {
+    body = await readBody(req, STORAGE_MAX_BYTES);
+  } catch (err) {
+    return sendJson(res, 413, { error: err.message });
+  }
+  if (body.length === 0) return sendJson(res, 400, { error: 'File kosong' });
+
+  try {
+    await fs.promises.mkdir(path.dirname(absolute), { recursive: true });
+    await fs.promises.writeFile(absolute, body);
+  } catch (err) {
+    console.error('[storage] Gagal menulis file:', err.message);
+    return sendJson(res, 500, { error: 'Gagal menyimpan file' });
+  }
+
+  return sendJson(res, 200, { success: true, path: objectPath.replace(/^\/+/, ''), size: body.length });
+}
+
+async function handleLocalDelete(req, res) {
+  if (!(await verifySupabaseToken(req))) {
+    return sendJson(res, 401, { error: 'Unauthorized' });
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse((await readBody(req, 256 * 1024)).toString('utf8') || '{}');
+  } catch {
+    return sendJson(res, 400, { error: 'Body JSON tidak valid' });
+  }
+
+  const paths = Array.isArray(payload?.paths) ? payload.paths : [];
+  const targets = paths.map(resolveStoragePath).filter(Boolean);
+  if (targets.length === 0) return sendJson(res, 400, { error: 'Tidak ada path valid' });
+
+  const failed = [];
+  for (const absolute of targets) {
+    try {
+      await fs.promises.unlink(absolute);
+    } catch (err) {
+      if (err.code !== 'ENOENT') failed.push({ path: absolute, error: err.message });
+    }
+  }
+
+  if (failed.length > 0) return sendJson(res, 500, { error: 'Sebagian file gagal dihapus', failed });
+  return sendJson(res, 200, { success: true, deleted: targets.length });
+}
+
+function serveLocalPhoto(req, res, urlPath) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'text/plain' });
+    res.end('Method Not Allowed');
+    return;
+  }
+
+  const objectPath = decodeURIComponent(urlPath.slice('/photos/'.length));
+  const absolute = resolveStoragePath(objectPath);
+  if (!absolute) {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    res.end('Bad Request');
+    return;
+  }
+
+  fs.stat(absolute, (err, stat) => {
+    if (err || !stat.isFile()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+      return;
+    }
+    const ext = path.extname(absolute).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': STORAGE_MIME[ext] || 'application/octet-stream',
+      'Content-Length': stat.size,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    });
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
+    fs.createReadStream(absolute).pipe(res);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Utility: sajikan file statis.
 // ---------------------------------------------------------------------------
 const MIME = {
@@ -197,6 +372,15 @@ function serveStatic(req, res) {
 // ---------------------------------------------------------------------------
 // Server utama
 // ---------------------------------------------------------------------------
+if (STORAGE_DRIVER === 'local') {
+  try {
+    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+  } catch (err) {
+    console.error(`[storage] Gagal membuat folder ${STORAGE_DIR}:`, err.message);
+    process.exit(1);
+  }
+}
+
 const server = http.createServer((req, res) => {
   const urlPath = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
   req.path = urlPath;
@@ -215,6 +399,34 @@ const server = http.createServer((req, res) => {
 
   // Route ke backend Supabase untuk path API. Teruskan seluruh req.url
   // (termasuk query string) agar filter & select PostgREST tetap bekerja.
+  if (urlPath.startsWith('/storage-api/')) {
+    if (STORAGE_DRIVER === 'local') {
+      if (urlPath === '/storage-api/upload') return handleLocalUpload(req, res);
+      if (urlPath === '/storage-api/delete') return handleLocalDelete(req, res);
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+      return;
+    }
+    if (!STORAGE_API_URL) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'STORAGE_API_URL belum dikonfigurasi di .env.local-proxy' }));
+      return;
+    }
+    return forwardTo(req, res, STORAGE_API_URL, req.url.slice('/storage-api'.length));
+  }
+
+  if (urlPath.startsWith('/photos/')) {
+    if (STORAGE_DRIVER === 'local') {
+      return serveLocalPhoto(req, res, urlPath);
+    }
+    if (!R2_PUBLIC_URL) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'R2_PUBLIC_URL belum dikonfigurasi di .env.local-proxy' }));
+      return;
+    }
+    return forwardTo(req, res, R2_PUBLIC_URL, req.url.slice('/photos'.length));
+  }
+
   if (
     urlPath.startsWith('/rest/v1') ||
     urlPath.startsWith('/auth/v1') ||
@@ -234,6 +446,7 @@ server.listen(PORT, HOST, () => {
   console.log('==========================================================');
   console.log(`  Static dir  : ${STATIC_DIR}`);
   console.log(`  Supabase    : ${SUPABASE_URL}`);
+  console.log(`  Storage     : ${STORAGE_DRIVER}${STORAGE_DRIVER === 'local' ? ` (${STORAGE_DIR})` : ''}`);
   console.log(`  Proxy listen: http://${HOST}:${PORT}`);
   console.log('----------------------------------------------------------');
   console.log('  Dari komputer internet-an di jaringan yang sama, buka:');

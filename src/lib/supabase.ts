@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 //   server/proxy-server.mjs ke Supabase asli. Flag ini dipakai (bukan mengosongkan
 //   VITE_SUPABASE_URL) karena PowerShell menghapus env var yang di-set ke string kosong,
 //   sehingga nilai dari file .env akan menang dan URL Supabase asli ikut ter-bundle.
-const useLocalProxy = import.meta.env.VITE_USE_LOCAL_PROXY === 'true';
+export const useLocalProxy = import.meta.env.VITE_USE_LOCAL_PROXY === 'true';
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 

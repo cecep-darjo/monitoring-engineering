@@ -33,6 +33,18 @@ Important business constraints recorded in migrations and `README_PERUBAHAN.txt`
 
 `README_PROXY.md` documents offline-LAN-client mode. `npm run build:proxy` runs `server/build-local-proxy.ps1`; the Node server `server/proxy-server.mjs` serves `dist/` and forwards `/rest/v1`, `/auth/v1`, `/storage/v1`, and `/functions/v1` to Supabase. `server/start-monitoring.bat` starts the proxy; default port is 8000. `.env.local-proxy` configures the upstream and should not be committed. `BACA-DULU.txt` is the quick start guide.
 
+## Storage backend (Supabase Storage or Cloudflare R2)
+
+All photo upload/delete/URL access goes through `src/lib/storage.ts`, so the backend can be switched without touching pages.
+
+- `VITE_STORAGE_DRIVER=supabase` (default) uses the `monitoring-photos` Supabase bucket.
+- `VITE_STORAGE_DRIVER=local` stores files on disk of the machine running the proxy, served at `/photos/*`. No extra database is needed: photo metadata stays in Supabase. Configure `STORAGE_DRIVER=local`, `STORAGE_DIR` (default `storage-data`), `STORAGE_MAX_BYTES`, `STORAGE_REQUIRE_AUTH` in `.env.local-proxy`. Guide: `server/PANDUAN-STORAGE-LOKAL.md`; copy old photos with `npm run migrate:local`.
+- `VITE_STORAGE_DRIVER=r2` uses Cloudflare R2: `VITE_R2_PUBLIC_URL` for public reads and `VITE_STORAGE_API_URL` for the Worker that issues presigned PUT URLs and deletes objects.
+- The Worker lives in `cloudflare/worker/` (`/upload`, `/delete`), verifies the Supabase access token, and signs R2 requests with `aws4fetch`. Migration guide: `cloudflare/README.md`.
+- In local-proxy mode the client always uses origin-relative paths (`/storage-api/*`, `/photos/*`); `server/proxy-server.mjs` forwards them to `STORAGE_API_URL` and `R2_PUBLIC_URL` from `.env.local-proxy`.
+- Local storage endpoints in `server/proxy-server.mjs`: `POST /storage-api/upload?path=...` (raw body), `POST /storage-api/delete` (JSON paths), `GET /photos/<path>`. Upload/delete verify the Supabase bearer token against `/auth/v1/user` unless `STORAGE_REQUIRE_AUTH=false`.
+- The `send-shift-report` edge function reads photos from `R2_PUBLIC_URL` when that secret is set, otherwise from Supabase Storage.
+
 ## Useful commands
 
 - `npm run dev` — Vite development server

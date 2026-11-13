@@ -53,6 +53,19 @@ if (-not $env:VITE_SUPABASE_ANON_KEY) {
   Write-Error 'VITE_SUPABASE_ANON_KEY tidak ditemukan. Isi ANON_KEY di .env.local-proxy terlebih dahulu.'
 }
 
+# ------- 2b. Storage driver (opsional: supabase | r2) -------
+# Pada mode local-proxy, URL storage selalu dibuat relatif ke origin proxy
+# (lihat src/lib/storage.ts), jadi VITE_STORAGE_API_URL tidak perlu diisi.
+if (-not $env:VITE_STORAGE_DRIVER -and $env:STORAGE_DRIVER) {
+  $env:VITE_STORAGE_DRIVER = $env:STORAGE_DRIVER
+}
+if (-not $env:VITE_R2_PUBLIC_URL -and $env:R2_PUBLIC_URL) {
+  $env:VITE_R2_PUBLIC_URL = $env:R2_PUBLIC_URL
+}
+if (-not $env:VITE_STORAGE_PUBLIC_URL -and $env:STORAGE_PUBLIC_URL) {
+  $env:VITE_STORAGE_PUBLIC_URL = $env:STORAGE_PUBLIC_URL
+}
+
 # ------- 3. Aktifkan mode local-proxy -------
 # PENTING: JANGAN mengosongkan VITE_SUPABASE_URL. Di Windows PowerShell, assignment
 # `$env:VITE_SUPABASE_URL = ''` malah MENGHAPUS variabel tersebut, sehingga Vite akan
@@ -65,6 +78,7 @@ Write-Host ""
 Write-Host "  Mode build               : LOCAL-PROXY (pakai window.location.origin)"
 Write-Host "  VITE_USE_LOCAL_PROXY     : true"
 Write-Host "  VITE_SUPABASE_ANON_KEY   : (terisi, dibakar ke bundle)"
+Write-Host "  Storage driver           : $(if ($env:VITE_STORAGE_DRIVER) { $env:VITE_STORAGE_DRIVER } else { 'supabase' })"
 if ($env:SUPABASE_URL) {
   Write-Host "  Backend Supabase (proxy)  : $($env:SUPABASE_URL)"
 }

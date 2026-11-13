@@ -9,7 +9,8 @@ import {
   X,
   Mail,
 } from 'lucide-react';
-import { supabase, STORAGE_BUCKET, FUNCTIONS_URL } from '@/lib/supabase';
+import { supabase, FUNCTIONS_URL } from '@/lib/supabase';
+import { photoUrl } from '@/lib/storage';
 import { useAuth } from '@/lib/AuthContext';
 import {
   SHIFT_SHORT,
@@ -84,10 +85,7 @@ export default function Reports() {
 
       const photoUrls: Record<string, string> = {};
       for (const photo of photos || []) {
-        const { data } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .getPublicUrl(photo.storage_path);
-        photoUrls[photo.id] = data.publicUrl;
+        photoUrls[photo.id] = photoUrl(photo.storage_path);
       }
 
       await generateReportPDF({
