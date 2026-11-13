@@ -1,0 +1,35 @@
+# ============================================================
+# CONTOH KONFIGURASI CLOUDFLARE TUNNEL
+# ------------------------------------------------------------
+# Salin file ini ke:
+#   C:\Users\<NAMA-ANDA>\.cloudflared\config.yml
+#
+# Lalu ganti:
+#   - <UUID-TUNNEL>  -> id dari `cloudflared tunnel create foto-woeng`
+#   - <NAMA-ANDA>    -> nama user Windows Anda
+#   - foto.woeng.my.id -> subdomain yang Anda pakai
+#
+# Cara membuat tunnel (sekali saja):
+#   cloudflared tunnel login
+#   cloudflared tunnel create foto-woeng
+#   cloudflared tunnel route dns foto-woeng foto.woeng.my.id
+#
+# Cara menjalankan:
+#   cloudflared tunnel run foto-woeng
+# ============================================================
+
+tunnel: <UUID-TUNNEL>
+credentials-file: C:\Users\<NAMA-ANDA>\.cloudflared\<UUID-TUNNEL>.json
+
+# Kualitas koneksi (opsional, aman untuk default)
+# loglevel: info
+# protocol: quic
+
+ingress:
+  # Semua request ke subdomain foto diteruskan ke proxy lokal.
+  # Proxy inilah yang melayani /photos/* dan /storage-api/*.
+  - hostname: foto.woeng.my.id
+    service: http://localhost:8000
+
+  # Wajib ada sebagai aturan terakhir: tolak hostname lain.
+  - service: http_status:404

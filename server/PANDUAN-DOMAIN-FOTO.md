@@ -41,6 +41,39 @@ membuat komputer itu bisa diakses lewat domain tanpa membuka port router.
 
 ---
 
+## 0.1 Cara cepat (otomatis)
+
+Setelah langkah 2 (domain aktif di Cloudflare) dan langkah 3 (cloudflared
+terpasang), sisa langkah 4–6 bisa dijalankan otomatis:
+
+```powershell
+cd C:\Users\Interbat\monitoring-engineering
+npm.cmd run setup:tunnel
+```
+
+Skrip `server/setup-cloudflared-tunnel.ps1` akan:
+
+1. Mencari `cloudflared` (PATH, Program Files, atau WinGet).
+2. Membuka browser untuk `cloudflared tunnel login` bila `cert.pem` belum ada.
+3. Membuat tunnel `foto-woeng` (atau memakai yang sudah ada).
+4. Menjalankan `cloudflared tunnel route dns foto-woeng foto.woeng.my.id`.
+5. Menulis `%USERPROFILE%\.cloudflared\config.yml` (config lama dicadangkan).
+
+Parameter opsional:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File server\setup-cloudflared-tunnel.ps1 `
+  -TunnelName foto-woeng -Hostname foto.woeng.my.id -Port 8000
+```
+
+Setelah itu lanjut ke **langkah 7** (konfigurasi proxy). Untuk menjalankan
+sehari-hari cukup double-click **`server\start-foto-tunnel.bat`** (atau
+`npm run start:foto`) — file itu menyalakan proxy **dan** tunnel sekaligus.
+
+Langkah 4–6 di bawah tetap disediakan bila Anda ingin melakukannya manual.
+
+---
+
 ## 1. Prasyarat
 
 1. Domain `woeng.my.id` sudah Anda miliki (punya akses ke registrar/pengelola DNS).
@@ -133,11 +166,18 @@ di zona `woeng.my.id`. Cek di dashboard Cloudflare → **DNS** → harus ada rec
 
 ## 6. Buat file konfigurasi tunnel
 
-Buat `C:\Users\Interbat\.cloudflared\config.yml`:
+Cara termudah: salin contoh lalu ganti UUID.
+
+```powershell
+copy server\cloudflared-config.example.yml "$env:USERPROFILE\.cloudflared\config.yml"
+notepad "$env:USERPROFILE\.cloudflared\config.yml"
+```
+
+Isi yang benar (ganti `<UUID-TUNNEL>` dan `<NAMA-ANDA>`):
 
 ```yaml
-tunnel: 6f1c2a3b-1111-2222-3333-444455556666
-credentials-file: C:\Users\Interbat\.cloudflared\6f1c2a3b-1111-2222-3333-444455556666.json
+tunnel: <UUID-TUNNEL>
+credentials-file: C:\Users\<NAMA-ANDA>\.cloudflared\<UUID-TUNNEL>.json
 
 ingress:
   - hostname: foto.woeng.my.id
@@ -145,7 +185,7 @@ ingress:
   - service: http_status:404
 ```
 
-Ganti UUID dengan milik Anda. **Jangan** pakai tanda kutip pada path Windows.
+**Jangan** pakai tanda kutip pada path Windows.
 
 Uji jalankan (biarkan terminal ini terbuka):
 
@@ -327,8 +367,14 @@ Buat dua task, keduanya *At startup* / *At log on*, **Run whether user is logged
 
 ### Opsi C — pakai file .bat yang sudah ada
 
-`server/start-monitoring.bat` sudah menjalankan proxy. Tambahkan satu baris
-`start "" cloudflared tunnel run foto-woeng` di akhir file itu.
+Double-click **`server\start-foto-tunnel.bat`** (atau `npm run start:foto`).
+File ini:
+
+- memeriksa Node.js, `cloudflared`, `config.yml`, dan `.env.local-proxy`;
+- memperingatkan bila `STORAGE_ONLY` belum `true`;
+- membuka **dua jendela**: proxy dan tunnel.
+
+Tutup kedua jendela untuk menghentikan layanan.
 
 ---
 
@@ -398,3 +444,25 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 - [ ] Foto lama disalin (`migrate-storage-local.mjs`)
 - [ ] Tunnel + proxy otomatis jalan saat komputer restart
 - [ ] Backup `storage-data/` terjadwal
+
+---
+
+## 16. Berkas bantu di folder `server/`
+
+| Berkas | Fungsi |
+|---|---|
+| `setup-cloudflared-tunnel.ps1` | Setup otomatis: login, buat tunnel, route DNS, tulis `config.yml`. Jalankan sekali. |
+| `start-foto-tunnel.bat` | Menyalakan proxy + tunnel sekaligus (double-click). |
+| `cloudflared-config.example.yml` | Contoh `config.yml` bila ingin setup manual. |
+| `proxy-server.mjs` | Server yang melayani `/photos/*` dan `/storage-api/*`. |
+| `migrate-storage-local.mjs` | Menyalin foto lama dari Supabase Storage ke `storage-data/`. |
+| `PANDUAN-STORAGE-LOKAL.md` | Panduan storage lokal (LAN, tanpa domain). |
+
+Perintah npm terkait:
+
+```powershell
+npm.cmd run setup:tunnel   # setup tunnel sekali jalan
+npm.cmd run start:foto     # proxy + tunnel
+npm.cmd run start:proxy    # proxy saja (LAN)
+npm.cmd run migrate:local  # salin foto lama
+```

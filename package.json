@@ -13,6 +13,8 @@
     "build:cloudflare": "node server/build-cloudflare.mjs",
     "build:cloudflare:ps1": "powershell -ExecutionPolicy Bypass -File server/build-cloudflare.ps1",
     "start:proxy": "node server/proxy-server.mjs",
+    "start:foto": "server\\start-foto-tunnel.bat",
+    "setup:tunnel": "powershell -ExecutionPolicy Bypass -File server/setup-cloudflared-tunnel.ps1",
     "migrate:local": "node server/migrate-storage-local.mjs"
   },
   "dependencies": {

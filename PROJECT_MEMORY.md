@@ -70,6 +70,8 @@ When both are set, `build:cloudflare` automatically uses `VITE_STORAGE_DRIVER=lo
 
 Full step-by-step guide (Cloudflare Tunnel + custom domain `woeng.my.id`): `server/PANDUAN-DOMAIN-FOTO.md`.
 
+Helper files: `server/setup-cloudflared-tunnel.ps1` (`npm run setup:tunnel`, one-time tunnel+DNS+config setup), `server/start-foto-tunnel.bat` (`npm run start:foto`, runs proxy + tunnel), `server/cloudflared-config.example.yml`. Proxy env `STORAGE_ONLY=true` restricts public exposure to `/photos/*` + `/storage-api/*`.
+
 ## Useful commands
 
 - `npm run dev` — Vite development server
