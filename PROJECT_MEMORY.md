@@ -55,6 +55,8 @@ All photo upload/delete/URL access goes through `src/lib/storage.ts`, so the bac
 
 `build:cloudflare` forces `VITE_USE_LOCAL_PROXY=false` and `VITE_STORAGE_DRIVER=supabase`, and writes to a separate folder so it never overwrites the proxy build. On Cloudflare Pages set build command `npm run build:cloudflare`, output dir `dist-cloudflare`, and env vars `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`.
 
+`build:cloudflare` runs `node server/build-cloudflare.mjs` (cross-platform, works on Cloudflare's Linux build image). The old PowerShell version is still available as `npm run build:cloudflare:ps1` for Windows only — do NOT use it as the Cloudflare Pages build command (fails with `sh: powershell: not found`).
+
 ## Useful commands
 
 - `npm run dev` — Vite development server
