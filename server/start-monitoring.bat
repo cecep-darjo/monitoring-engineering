@@ -91,6 +91,25 @@ if not exist "dist\index.html" (
   )
 )
 
+REM ---------- Cek apakah port sudah dipakai ----------
+set "PORT_BUSY="
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:"TCP.*:%PORT% .*LISTENING"') do (
+  if not defined PORT_BUSY set "PORT_BUSY=%%p"
+)
+if defined PORT_BUSY (
+  echo.
+  echo [X] Port %PORT% sudah dipakai proses lain ^(PID %PORT_BUSY%^).
+  echo     Kemungkinan proxy ini sudah berjalan di jendela lain.
+  echo.
+  echo     Hentikan proses itu:
+  echo         taskkill /PID %PORT_BUSY% /F
+  echo     Atau ubah PORT di .env.local-proxy ^(mis. PORT=8001^)
+  echo     lalu sesuaikan config.yml tunnel.
+  echo.
+  pause
+  exit /b 1
+)
+
 echo.
 echo [OK] Menjalankan proxy di port %PORT%...
 echo      Dari komputer lain, buka:  http://[IP-komputer-ini]:%PORT%/

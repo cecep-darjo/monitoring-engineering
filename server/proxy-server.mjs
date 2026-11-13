@@ -499,3 +499,51 @@ server.listen(PORT, HOST, () => {
   console.log('  Cari IP dengan:  ipconfig   (kolom IPv4 untuk adapter aktif)');
   console.log('==========================================================');
 });
+
+// ---------------------------------------------------------------------------
+// Penanganan error server (mis. port sudah dipakai proses lain).
+// Tanpa ini Node mencetak stack trace mentah dan proses berhenti mendadak.
+// ---------------------------------------------------------------------------
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error('');
+    console.error('==========================================================');
+    console.error(`  GAGAL: port ${PORT} sudah dipakai proses lain.`);
+    console.error('==========================================================');
+    console.error('  Kemungkinan proxy ini sudah berjalan di jendela lain.');
+    console.error('');
+    console.error('  Cara mengatasi:');
+    console.error(`    1. Cari proses yang memakai port ${PORT}:`);
+    console.error(`         netstat -ano | findstr :${PORT}`);
+    console.error('    2. Hentikan prosesnya (ganti <PID> dengan angka dari langkah 1):');
+    console.error('         taskkill /PID <PID> /F');
+    console.error('    3. Atau pakai port lain: ubah PORT di .env.local-proxy');
+    console.error('       (mis. PORT=8001) lalu sesuaikan config.yml tunnel.');
+    console.error('');
+    console.error('  Cek cepat di PowerShell:');
+    console.error(`    Get-NetTCPConnection -LocalPort ${PORT} -State Listen |`);
+    console.error('      Select-Object OwningProcess');
+    console.error('==========================================================');
+    process.exit(1);
+  }
+
+  if (err.code === 'EACCES') {
+    console.error('');
+    console.error(`  GAGAL: tidak punya izin memakai port ${PORT}.`);
+    console.error('  Port < 1024 butuh hak administrator. Pakai port lain (mis. 8000).');
+    process.exit(1);
+  }
+
+  console.error('[proxy] Error server:', err.message);
+  process.exit(1);
+});
+
+// Matikan dengan rapi saat Ctrl+C / jendela ditutup.
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    console.log(`\n[proxy] Menerima ${signal}, menghentikan server...`);
+    server.close(() => process.exit(0));
+    // Jaring pengaman bila koneksi menggantung.
+    setTimeout(() => process.exit(0), 3000).unref();
+  });
+}

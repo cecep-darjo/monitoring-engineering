@@ -399,6 +399,7 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 
 | Gejala | Penyebab & solusi |
 |---|---|
+| `EADDRINUSE: address already in use 0.0.0.0:8000` | Proxy sudah berjalan di jendela lain. Jalankan `npm run stop:proxy` (atau `server\stop-proxy.bat`), lalu start lagi. Bisa juga ubah `PORT` di `.env.local-proxy` + `config.yml` tunnel. |
 | `foto.woeng.my.id` → 502/1033 | Tunnel mati atau proxy mati. Jalankan `cloudflared tunnel run foto-woeng` dan `npm run start:proxy`. |
 | `foto.woeng.my.id` → 404 untuk semua path | `STORAGE_ONLY=true` dan path bukan `/photos/` atau `/storage-api/`. Ini normal untuk `/`. |
 | Foto 404 padahal file ada | Cek `STORAGE_DIR` di `.env.local-proxy`; path harus relatif ke folder proyek. |
@@ -455,6 +456,7 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 |---|---|
 | `setup-cloudflared-tunnel.ps1` | Setup otomatis: login, buat tunnel, route DNS, tulis `config.yml`. Jalankan sekali. |
 | `start-foto-tunnel.bat` | Menyalakan proxy + tunnel sekaligus (double-click). |
+| `stop-proxy.bat` | Menghentikan proxy yang masih memakai port (mengatasi `EADDRINUSE`). |
 | `cloudflared-config.example.yml` | Contoh `config.yml` bila ingin setup manual. |
 | `proxy-server.mjs` | Server yang melayani `/photos/*` dan `/storage-api/*`. |
 | `migrate-storage-local.mjs` | Menyalin foto lama dari Supabase Storage ke `storage-data/`. |
@@ -466,5 +468,6 @@ Perintah npm terkait:
 npm.cmd run setup:tunnel   # setup tunnel sekali jalan
 npm.cmd run start:foto     # proxy + tunnel
 npm.cmd run start:proxy    # proxy saja (LAN)
+npm.cmd run stop:proxy     # hentikan proxy (atasi EADDRINUSE)
 npm.cmd run migrate:local  # salin foto lama
 ```

@@ -76,6 +76,8 @@ Live setup (2026-11-13): tunnel `foto-woeng` id `100ede30-6795-4de0-a924-7ae6271
 
 PowerShell 5.1 gotcha: never use `$ErrorActionPreference='Stop'` in scripts calling `cloudflared` — its stderr warnings become fatal `NativeCommandError`. Use the `Invoke-Native` helper pattern (capture `2>&1`, check `$LASTEXITCODE`). Also `?.` null-conditional is not supported in PS 5.1.
 
+`EADDRINUSE` on port 8000 = proxy already running in another window. `npm run stop:proxy` (`server/stop-proxy.bat`) kills the listener using the `PORT` from `.env.local-proxy`. `proxy-server.mjs` now has a friendly `server.on('error')` handler for EADDRINUSE/EACCES plus SIGINT/SIGTERM graceful shutdown.
+
 ## Useful commands
 
 - `npm run dev` — Vite development server
