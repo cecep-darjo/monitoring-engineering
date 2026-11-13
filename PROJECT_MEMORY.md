@@ -39,11 +39,21 @@ All photo upload/delete/URL access goes through `src/lib/storage.ts`, so the bac
 
 - `VITE_STORAGE_DRIVER=supabase` (default) uses the `monitoring-photos` Supabase bucket.
 - `VITE_STORAGE_DRIVER=local` stores files on disk of the machine running the proxy, served at `/photos/*`. No extra database is needed: photo metadata stays in Supabase. Configure `STORAGE_DRIVER=local`, `STORAGE_DIR` (default `storage-data`), `STORAGE_MAX_BYTES`, `STORAGE_REQUIRE_AUTH` in `.env.local-proxy`. Guide: `server/PANDUAN-STORAGE-LOKAL.md`; copy old photos with `npm run migrate:local`.
+- The `local` driver is only honored when `VITE_USE_LOCAL_PROXY=true`. On any static deploy (Cloudflare Pages) it silently falls back to Supabase Storage, so a stray `VITE_STORAGE_DRIVER=local` cannot break the hosted app.
 - `VITE_STORAGE_DRIVER=r2` uses Cloudflare R2: `VITE_R2_PUBLIC_URL` for public reads and `VITE_STORAGE_API_URL` for the Worker that issues presigned PUT URLs and deletes objects.
 - The Worker lives in `cloudflare/worker/` (`/upload`, `/delete`), verifies the Supabase access token, and signs R2 requests with `aws4fetch`. Migration guide: `cloudflare/README.md`.
 - In local-proxy mode the client always uses origin-relative paths (`/storage-api/*`, `/photos/*`); `server/proxy-server.mjs` forwards them to `STORAGE_API_URL` and `R2_PUBLIC_URL` from `.env.local-proxy`.
 - Local storage endpoints in `server/proxy-server.mjs`: `POST /storage-api/upload?path=...` (raw body), `POST /storage-api/delete` (JSON paths), `GET /photos/<path>`. Upload/delete verify the Supabase bearer token against `/auth/v1/user` unless `STORAGE_REQUIRE_AUTH=false`.
 - The `send-shift-report` edge function reads photos from `R2_PUBLIC_URL` when that secret is set, otherwise from Supabase Storage.
+
+## Two build targets (do not mix)
+
+| Target | Command | Output | Storage |
+|---|---|---|---|
+| Local proxy (LAN/offline) | `npm run build:proxy` | `dist/` | `local` disk via `/photos/*` |
+| Cloudflare Pages (static) | `npm run build:cloudflare` | `dist-cloudflare/` | Supabase Storage |
+
+`build:cloudflare` forces `VITE_USE_LOCAL_PROXY=false` and `VITE_STORAGE_DRIVER=supabase`, and writes to a separate folder so it never overwrites the proxy build. On Cloudflare Pages set build command `npm run build:cloudflare`, output dir `dist-cloudflare`, and env vars `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`.
 
 ## Useful commands
 

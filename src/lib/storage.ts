@@ -33,8 +33,28 @@ const STORAGE_PUBLIC_URL = ((import.meta.env.VITE_STORAGE_PUBLIC_URL as string |
 
 export type StorageDriver = 'supabase' | 'r2' | 'local';
 
+// Driver 'local' hanya masuk akal bila aplikasi disajikan oleh proxy lokal
+// (server/proxy-server.mjs), karena hanya proxy itu yang menyediakan
+// /storage-api dan /photos. Pada deploy statis (mis. Cloudflare Pages) driver
+// ini akan menghasilkan URL /photos/... yang 404, jadi kita jatuh ke Supabase.
+const localDriverAllowed = useLocalProxy;
+
 export const storageDriver: StorageDriver =
-  rawDriver === 'r2' ? 'r2' : rawDriver === 'local' ? 'local' : 'supabase';
+  rawDriver === 'r2'
+    ? 'r2'
+    : rawDriver === 'local'
+      ? localDriverAllowed
+        ? 'local'
+        : 'supabase'
+      : 'supabase';
+
+if (rawDriver === 'local' && !localDriverAllowed) {
+  console.warn(
+    '[storage] VITE_STORAGE_DRIVER=local diabaikan karena aplikasi tidak berjalan ' +
+      'dalam mode local-proxy. Memakai Supabase Storage. ' +
+      'Untuk deploy statis (Cloudflare Pages) set VITE_STORAGE_DRIVER=supabase.',
+  );
+}
 
 function apiBase(): string {
   if (useLocalProxy) return `${window.location.origin}/storage-api`;

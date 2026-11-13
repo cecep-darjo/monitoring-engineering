@@ -414,6 +414,66 @@ menyalin balik, unggah ulang lewat aplikasi atau tulis skrip kecil yang membaca
 
 ---
 
+## 8.1 Deploy Cloudflare Pages (berdampingan dengan proxy lokal)
+
+Aplikasi ini punya **dua target build** yang harus dipisah. Jangan memakai
+`dist/` hasil `build:proxy` untuk Cloudflare, karena folder itu berisi URL
+`/photos/...` yang hanya dilayani proxy lokal.
+
+| Target | Perintah | Output | Storage |
+|---|---|---|---|
+| Proxy lokal (LAN) | `npm run build:proxy` | `dist/` | disk lokal |
+| Cloudflare Pages | `npm run build:cloudflare` | `dist-cloudflare/` | Supabase Storage |
+
+### Langkah
+
+1. Build khusus Cloudflare:
+
+```powershell
+npm.cmd run build:cloudflare
+```
+
+Skrip ini memaksa `VITE_USE_LOCAL_PROXY=false` dan
+`VITE_STORAGE_DRIVER=supabase`, lalu menulis ke `dist-cloudflare/`.
+
+2. Di Cloudflare Pages (Settings -> Build):
+
+```
+Build command : npm run build:cloudflare
+Output dir    : dist-cloudflare
+```
+
+3. Environment variables di Cloudflare Pages:
+
+```
+VITE_SUPABASE_URL=https://qkdosuplybkdfdwuzzxx.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon/publishable key>
+```
+
+Jangan set `VITE_STORAGE_DRIVER=local` di Cloudflare.
+
+### Pengaman otomatis
+
+`src/lib/storage.ts` mengabaikan driver `local` bila aplikasi tidak berjalan
+dalam mode local-proxy. Jadi kalau variabel itu tidak sengaja ikut ter-set,
+aplikasi Cloudflare tetap memakai Supabase Storage dan foto tetap tampil.
+
+### Verifikasi setelah deploy
+
+Buka situs Cloudflare, lalu DevTools -> Network -> buka History:
+
+- Request gambar harus menuju `*.supabase.co/storage/v1/object/public/...`
+- Tidak boleh ada request ke `/photos/...` di domain Cloudflare
+
+### Penting soal data
+
+Cloudflare memakai Supabase Storage, sedangkan proxy lokal memakai
+`storage-data/`. Foto yang diupload lewat Cloudflare **tidak** otomatis muncul
+di proxy lokal, dan sebaliknya. Selama bucket Supabase masih aktif, keduanya
+berjalan sendiri-sendiri tanpa saling merusak.
+
+---
+
 ## 9. Checklist go-live
 
 - [ ] `STORAGE_DRIVER=local` di `.env.local-proxy`

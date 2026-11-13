@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "build:proxy": "powershell -ExecutionPolicy Bypass -File server/build-local-proxy.ps1",
+    "build:cloudflare": "powershell -ExecutionPolicy Bypass -File server/build-cloudflare.ps1",
     "start:proxy": "node server/proxy-server.mjs",
     "migrate:local": "node server/migrate-storage-local.mjs"
   },
