@@ -78,6 +78,14 @@ PowerShell 5.1 gotcha: never use `$ErrorActionPreference='Stop'` in scripts call
 
 `EADDRINUSE` on port 8000 = proxy already running in another window. `npm run stop:proxy` (`server/stop-proxy.bat`) kills the listener using the `PORT` from `.env.local-proxy`. `proxy-server.mjs` now has a friendly `server.on('error')` handler for EADDRINUSE/EACCES plus SIGINT/SIGTERM graceful shutdown.
 
+Proxy modes (`server/proxy-server.mjs`):
+- `APP_UPSTREAM_URL` set → BRIDGE mode: all non-storage paths proxied to that upstream (e.g. `https://monitoreng.pages.dev`), photos still served from `storage-data/`. Overrides `STORAGE_ONLY`.
+- `BRIDGE_REWRITE` (comma list, default `SUPABASE_URL`) → literal absolute URLs in proxied JS/HTML/CSS are rewritten to `window.location.origin` (+ path), so LAN clients never need direct internet. Regex matches quoted absolute URLs.
+- Otherwise `STORAGE_ONLY=true` → only `/photos/*` + `/storage-api/*`; else STATIC mode serves `dist/`.
+- `forwardTo(req,res,baseUrl,path)` is the generic upstream forwarder (also used by `/storage-api` and r2 `/photos`).
+
+Verified 2026-11-13: bridge root 200 (app HTML), `/assets/*.js` 200 with 0 absolute supabase/foto URLs and 6 `window.location.origin`, `/rest/v1/monitoring_photos` 200 via proxy, `/photos/_uji/t.png` 200 image/png.
+
 ## Useful commands
 
 - `npm run dev` — Vite development server

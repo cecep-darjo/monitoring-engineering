@@ -77,6 +77,23 @@ const ALLOWED_ORIGIN_LIST = ALLOWED_ORIGIN.split(',').map((s) => s.trim()).filte
 // terbuka. Default false (perilaku lama: semua path dilayani).
 const STORAGE_ONLY = (process.env.STORAGE_ONLY || 'false').trim().toLowerCase() === 'true';
 
+// Mode "bridge": proxy meneruskan SEMUA request non-storage ke aplikasi
+// upstream (mis. https://monitoreng.pages.dev). Dengan ini komputer lain di
+// LAN bisa membuka aplikasi lewat PC ini, tanpa perlu build lokal.
+// Kosongkan untuk menyajikan folder dist/ lokal (mode build:proxy).
+const APP_UPSTREAM_URL = (process.env.APP_UPSTREAM_URL || '').trim().replace(/\/+$/, '');
+
+// Daftar URL absolut yang ditulis ulang menjadi origin proxy saat mode bridge.
+// Tujuannya agar browser klien hanya menghubungi PC ini (bukan internet):
+//   "https://xxx.supabase.co"        -> window.location.origin
+//   "https://foto.woeng.my.id"       -> window.location.origin
+//   "https://foto.woeng.my.id/storage-api" -> window.location.origin+"/storage-api"
+// Isi lewat env BRIDGE_REWRITE (dipisah koma). Default: SUPABASE_URL.
+const BRIDGE_REWRITE = (process.env.BRIDGE_REWRITE || SUPABASE_URL || '')
+  .split(',')
+  .map((s) => s.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
 function corsOriginFor(req) {
   const origin = req.headers.origin;
   if (!origin) return null;
@@ -166,6 +183,127 @@ function forward(req, res, targetUrl) {
     if (!res.headersSent) {
       res.writeHead(502, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: `Proxy backend error: ${err.message}` }));
+    } else {
+      res.end();
+    }
+  });
+
+  req.pipe(proxyReq);
+}
+
+// ---------------------------------------------------------------------------
+// Utility: tulis ulang URL absolut di dalam teks (JS/HTML/CSS) menjadi origin
+// proxy, supaya klien LAN tidak perlu akses internet langsung.
+// ---------------------------------------------------------------------------
+function rewriteOrigins(text) {
+  if (!BRIDGE_REWRITE.length) return text;
+  // Panjang dulu supaya "https://host/path" diproses sebelum "https://host".
+  const sorted = [...BRIDGE_REWRITE].sort((a, b) => b.length - a.length);
+
+  // Cocokkan string berkutip berisi URL absolut, mis.
+  //   "https://foto.woeng.my.id/storage-api"  -> window.location.origin+"/storage-api"
+  //   'https://xxx.supabase.co'               -> window.location.origin
+  return text.replace(/(["'`])(https?:\/\/[^"'`\s\\]+)\1/g, (full, _quote, url) => {
+    for (const origin of sorted) {
+      if (url === origin) return 'window.location.origin';
+      if (url.startsWith(origin + '/')) {
+        const rest = url.slice(origin.length);
+        return `window.location.origin+${JSON.stringify(rest)}`;
+      }
+    }
+    return full;
+  });
+}
+
+function isTextual(contentType) {
+  if (!contentType) return false;
+  const ct = contentType.toLowerCase();
+  return (
+    ct.includes('javascript') ||
+    ct.includes('ecmascript') ||
+    ct.includes('text/html') ||
+    ct.includes('text/css') ||
+    ct.includes('application/json')
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Utility: teruskan request ke URL absolut (dipakai untuk /storage-api,
+// /photos (mode r2), dan APP_UPSTREAM_URL).
+// ---------------------------------------------------------------------------
+function forwardTo(req, res, baseUrl, pathAndQuery) {
+  if (!baseUrl) {
+    return sendJson(res, 503, { error: 'Target upstream belum dikonfigurasi' });
+  }
+
+  let target;
+  try {
+    target = new URL(pathAndQuery || '/', baseUrl.replace(/\/+$/, '') + '/');
+  } catch (err) {
+    return sendJson(res, 502, { error: `URL upstream tidak valid: ${err.message}` });
+  }
+
+  const isHttps = target.protocol === 'https:';
+  const httpMod = isHttps ? https : http;
+
+  const headers = Object.assign({}, req.headers);
+  headers.host = target.host;
+  // Biarkan upstream/CDN menentukan kompresi.
+  delete headers['accept-encoding'];
+
+  const proxyReq = httpMod.request(
+    target,
+    { method: req.method, headers },
+    (proxyRes) => {
+      const outHeaders = Object.assign({}, proxyRes.headers);
+      const contentType = outHeaders['content-type'] || '';
+      const shouldRewrite =
+        BRIDGE_REWRITE.length > 0 &&
+        isTextual(contentType) &&
+        (req.method === 'GET' || req.method === 'HEAD');
+
+      if (!shouldRewrite) {
+        res.writeHead(proxyRes.statusCode || 502, outHeaders);
+        proxyRes.pipe(res);
+        return;
+      }
+
+      // Buffer lalu tulis ulang URL absolut -> origin proxy.
+      const chunks = [];
+      proxyRes.on('data', (c) => chunks.push(c));
+      proxyRes.on('end', () => {
+        let body = Buffer.concat(chunks).toString('utf8');
+        body = rewriteOrigins(body);
+        const buf = Buffer.from(body, 'utf8');
+        delete outHeaders['content-encoding'];
+        delete outHeaders['transfer-encoding'];
+        outHeaders['content-length'] = String(buf.length);
+        res.writeHead(proxyRes.statusCode || 502, outHeaders);
+        res.end(req.method === 'HEAD' ? undefined : buf);
+      });
+      proxyRes.on('error', () => {
+        if (!res.headersSent) res.writeHead(502);
+        res.end();
+      });
+    },
+  );
+
+  proxyReq.setTimeout(30000, () => {
+    proxyReq.destroy(new Error('Upstream timeout (30s)'));
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error(`[proxy] Upstream error untuk ${req.method} ${target.href}:`, err.message);
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(
+        `<!doctype html><html><body style="font-family:system-ui;padding:2rem">` +
+          `<h2>Tidak bisa menghubungi aplikasi upstream</h2>` +
+          `<p><code>${target.href}</code></p>` +
+          `<p style="color:#b00">${err.message}</p>` +
+          `<p>Pastikan komputer ini terhubung ke internet.</p>` +
+          `</body></html>`,
+      );
     } else {
       res.end();
     }
@@ -434,7 +572,13 @@ const server = http.createServer((req, res) => {
   }
 
   // Mode khusus foto: tolak semua path selain /photos/* dan /storage-api/*.
-  if (STORAGE_ONLY && !urlPath.startsWith('/photos/') && !urlPath.startsWith('/storage-api/')) {
+  // Diabaikan otomatis bila APP_UPSTREAM_URL diisi (mode bridge aplikasi).
+  if (
+    STORAGE_ONLY &&
+    !APP_UPSTREAM_URL &&
+    !urlPath.startsWith('/photos/') &&
+    !urlPath.startsWith('/storage-api/')
+  ) {
     res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: 'Not found' }));
     return;
@@ -479,6 +623,13 @@ const server = http.createServer((req, res) => {
     return forward(req, res, req.url);
   }
 
+  // Mode bridge: teruskan semua request lain (HTML, JS, CSS, asset) ke
+  // aplikasi upstream. Ini membuat PC ini menjadi "jembatan internet" bagi
+  // komputer lain di LAN untuk membuka aplikasi Pages.
+  if (APP_UPSTREAM_URL) {
+    return forwardTo(req, res, APP_UPSTREAM_URL, req.url);
+  }
+
   // Segala sesuatu yang lain: file statis aplikasi.
   return serveStatic(req, res);
 });
@@ -491,7 +642,17 @@ server.listen(PORT, HOST, () => {
   console.log(`  Supabase    : ${SUPABASE_URL}`);
   console.log(`  Storage     : ${STORAGE_DRIVER}${STORAGE_DRIVER === 'local' ? ` (${STORAGE_DIR})` : ''}`);
   console.log(`  Proxy listen: http://${HOST}:${PORT}`);
-  if (STORAGE_ONLY) console.log('  Mode        : STORAGE_ONLY (hanya /photos/* dan /storage-api/*)');
+  if (APP_UPSTREAM_URL) {
+    console.log(`  Mode        : BRIDGE -> ${APP_UPSTREAM_URL}`);
+    console.log('                (aplikasi diteruskan ke upstream, foto dari disk lokal)');
+    if (BRIDGE_REWRITE.length) {
+      console.log(`  Rewrite URL : ${BRIDGE_REWRITE.join(', ')}`);
+    }
+  } else if (STORAGE_ONLY) {
+    console.log('  Mode        : STORAGE_ONLY (hanya /photos/* dan /storage-api/*)');
+  } else {
+    console.log(`  Mode        : STATIC (menyajikan ${STATIC_DIR})`);
+  }
   if (ALLOWED_ORIGIN !== '*') console.log(`  CORS origin : ${ALLOWED_ORIGIN}`);
   console.log('----------------------------------------------------------');
   console.log('  Dari komputer internet-an di jaringan yang sama, buka:');

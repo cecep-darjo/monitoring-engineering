@@ -471,3 +471,98 @@ npm.cmd run start:proxy    # proxy saja (LAN)
 npm.cmd run stop:proxy     # hentikan proxy (atasi EADDRINUSE)
 npm.cmd run migrate:local  # salin foto lama
 ```
+
+---
+
+## 17. Mode BRIDGE: buka aplikasi lewat PC lokal
+
+Selain menyajikan foto, proxy bisa **menjembatani** aplikasi Cloudflare Pages
+untuk komputer lain di LAN:
+
+```
+Browser (komputer lain, tanpa internet)
+   └── http://<IP-PC>:8000/  ──> PC lokal ──internet──> monitoreng.pages.dev
+                                  ├── /rest/v1, /auth/v1, /storage/v1, /functions/v1 -> Supabase
+                                  └── /photos/* -> storage-data/ (disk lokal)
+```
+
+### 17.1 Aktifkan
+
+Di `.env.local-proxy`:
+
+```ini
+APP_UPSTREAM_URL=https://monitoreng.pages.dev
+BRIDGE_REWRITE=https://qkdosuplybkdfdwuzzxx.supabase.co,https://foto.woeng.my.id
+STORAGE_ONLY=true
+```
+
+Lalu restart proxy:
+
+```powershell
+npm.cmd run stop:proxy
+npm.cmd run start:proxy
+```
+
+Log harus menampilkan:
+
+```
+Mode        : BRIDGE -> https://monitoreng.pages.dev
+              (aplikasi diteruskan ke upstream, foto dari disk lokal)
+Rewrite URL : https://qkdosuplybkdfdwuzzxx.supabase.co, https://foto.woeng.my.id
+```
+
+Buka `http://<IP-PC>:8000/` dari komputer lain.
+
+### 17.2 Kenapa perlu `BRIDGE_REWRITE`
+
+Bundle JavaScript dari Pages berisi **URL absolut**:
+
+```js
+"https://qkdosuplybkdfdwuzzxx.supabase.co"   // Supabase
+"https://foto.woeng.my.id/storage-api"       // storage
+```
+
+Tanpa penulisan ulang, browser klien akan menghubungi alamat itu langsung
+(butuh internet). Proxy menggantinya saat transit menjadi:
+
+```js
+window.location.origin                      // -> http://<IP-PC>:8000
+window.location.origin+"/storage-api"       // -> http://<IP-PC>:8000/storage-api
+```
+
+Sehingga klien hanya berbicara dengan PC ini.
+
+### 17.3 Kapan sebaiknya tidak memakai bridge
+
+| Butuh | Pakai |
+|---|---|
+| Selalu versi terbaru tanpa rebuild | `APP_UPSTREAM_URL` (bridge) |
+| Jalan penuh tanpa internet sama sekali | `npm run build:proxy` (dist lokal) |
+| Hanya foto (expose ke internet) | `STORAGE_ONLY=true`, tanpa bridge |
+
+Mode `build:proxy` lebih tahan banting untuk LAN offline karena bundle-nya
+memang dibangun dengan URL relatif; bridge menyiasatinya dengan penulisan ulang
+teks pada setiap request.
+
+### 17.4 Uji cepat
+
+```powershell
+# aplikasi (harus HTML app)
+curl.exe -i http://localhost:8000/
+
+# Supabase lewat proxy (harus 200)
+curl.exe -s http://localhost:8000/auth/v1/health -H "apikey: <anon-key>"
+
+# foto lokal (harus 200 image/png)
+curl.exe -I http://localhost:8000/photos/<path>/<file>.jpg
+```
+
+### 17.5 Catatan tunnel
+
+Saat `APP_UPSTREAM_URL` diisi, `STORAGE_ONLY` **otomatis diabaikan** agar
+`/` bisa dilayani. Karena itu:
+
+- Kalau tunnel `foto.woeng.my.id` aktif, siapa pun bisa membuka
+  `https://foto.woeng.my.id/` dan melihat aplikasi. Bila itu tidak diinginkan,
+  jalankan **dua** proxy terpisah (satu untuk tunnel, satu untuk LAN) atau
+  kembalikan `STORAGE_ONLY=true` dan kosongkan `APP_UPSTREAM_URL`.
