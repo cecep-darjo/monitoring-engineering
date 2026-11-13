@@ -72,7 +72,7 @@ Full step-by-step guide (Cloudflare Tunnel + custom domain `woeng.my.id`): `serv
 
 Helper files: `server/setup-cloudflared-tunnel.ps1` (`npm run setup:tunnel`, one-time tunnel+DNS+config setup), `server/start-foto-tunnel.bat` (`npm run start:foto`, runs proxy + tunnel), `server/cloudflared-config.example.yml`. Proxy env `STORAGE_ONLY=true` restricts public exposure to `/photos/*` + `/storage-api/*`.
 
-Live setup (2026-11-13): tunnel `foto-woeng` id `100ede30-6795-4de0-a924-7ae6271b3e85`, hostname `monitoring.woeng.my.id` → `http://localhost:8001` (config.yml). Verified earlier: root 404, `/photos/*` serves files, CORS preflight 204 for `https://monitoreng.pages.dev`.
+Live setup (2026-11-13): tunnel `foto-woeng` id `100ede30-6795-4de0-a924-7ae6271b3e85`. Public hostnames `monitoring.woeng.my.id` (primary) and `foto.woeng.my.id` (legacy) both → `http://localhost:8000` (bridge app, serves app + `/photos/*` + `/storage-api/*`). Verified: root 200, `/photos/` 400, `/storage-api/upload` 401, CORS preflight 204 for `https://monitoreng.pages.dev`.
 
 PowerShell 5.1 gotcha: never use `$ErrorActionPreference='Stop'` in scripts calling `cloudflared` — its stderr warnings become fatal `NativeCommandError`. Use the `Invoke-Native` helper pattern (capture `2>&1`, check `$LASTEXITCODE`). Also `?.` null-conditional is not supported in PS 5.1.
 
@@ -85,11 +85,11 @@ Proxy modes (`server/proxy-server.mjs`):
 - Otherwise `STORAGE_ONLY=true` → only `/photos/*` + `/storage-api/*`; else STATIC mode serves `dist/`.
 - `forwardTo(req,res,baseUrl,path)` is the generic upstream forwarder (also used by `/storage-api` and r2 `/photos`).
 
-Two-port layout (current): `APP_PORT=8000` (`--role=app`, bridge, LAN only) and `TUNNEL_PORT=8001` (`--role=foto`, storage-only, exposed via Cloudflare Tunnel). `%USERPROFILE%\.cloudflared\config.yml` ingress → `http://localhost:8001`. `server/start-foto-tunnel.bat` launches all three windows; `server/stop-proxy.bat` kills both ports.
+Single public origin (current): one bridge proxy on `APP_PORT=8000` (`--role=app`) serves the app (bridge to Pages), `/photos/*` (local disk), and `/storage-api/*`; it is exposed via Cloudflare Tunnel. `%USERPROFILE%\.cloudflared\config.yml` ingress → `http://localhost:8000`. `server/start-foto-tunnel.bat` launches two windows (proxy + tunnel). Note: public exposure includes the Supabase API proxy paths — accepted by owner.
 
 Note: a separate Windows service `Cloudflared` (LocalSystem, `tunnel run --token-file C:\ProgramData\cloudflared\token`) also runs — unrelated to tunnel `foto-woeng`; do not kill it.
 
-Verified 2026-11-13: 8000 root 200 (app HTML), 8001 root 404, `/photos/_uji/t.png` 200 on 8000/8001/public, `https://monitoring.woeng.my.id/` 404.
+Verified 2026-11-13: 8000 root 200 (app HTML); public `https://monitoring.woeng.my.id/` 200, `/photos/` 400, `/storage-api/upload` 401.
 
 ## Useful commands
 

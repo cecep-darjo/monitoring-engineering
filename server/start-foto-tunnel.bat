@@ -21,7 +21,6 @@ cd /d "%~dp0.."
 
 set "TUNNEL_NAME=foto-woeng"
 set "APP_PORT=8000"
-set "TUNNEL_PORT=8001"
 
 echo.
 echo ============================================================
@@ -97,18 +96,10 @@ for /f "usebackq tokens=1,* delims==" %%a in (".env.local-proxy") do (
   if /i "!_key!"=="STORAGE_ONLY"    set "STORAGE_ONLY=!_val!"
   if /i "!_key!"=="ALLOWED_ORIGIN"  set "ALLOWED_ORIGIN=!_val!"
   if /i "!_key!"=="APP_PORT"        set "APP_PORT=!_val!"
-  if /i "!_key!"=="TUNNEL_PORT"     set "TUNNEL_PORT=!_val!"
   if /i "!_key!"=="APP_UPSTREAM_URL" set "APP_UPSTREAM=!_val!"
   if /i "!_key!"=="PORT" (
     if not defined APP_PORT set "APP_PORT=!_val!"
   )
-)
-if "!APP_PORT!"=="!TUNNEL_PORT!" (
-  echo.
-  echo [X] APP_PORT dan TUNNEL_PORT tidak boleh sama ^(!APP_PORT!^).
-  echo     Ubah salah satu di .env.local-proxy.
-  pause
-  exit /b 1
 )
 if /i not "!STORAGE_ONLY!"=="true" (
   echo.
@@ -135,31 +126,26 @@ if not exist "node_modules" (
   )
 )
 
-REM ---------- 6. Jalankan proxy APLIKASI (bridge) ----------
+REM ---------- 6. Jalankan proxy APLIKASI + FOTO (bridge) ----------
 echo.
-echo [1/3] Menjalankan proxy APLIKASI di port %APP_PORT% ...
-start "Monitoring - App (port %APP_PORT%)" cmd /k ""%NODE%" server\proxy-server.mjs --port=%APP_PORT% --role=app"
-
-REM ---------- 7. Jalankan proxy FOTO (khusus tunnel) ----------
-echo [2/3] Menjalankan proxy FOTO di port %TUNNEL_PORT% ...
-start "Monitoring - Foto (port %TUNNEL_PORT%)" cmd /k ""%NODE%" server\proxy-server.mjs --port=%TUNNEL_PORT% --role=foto"
+echo [1/2] Menjalankan proxy APLIKASI + FOTO di port %APP_PORT% ...
+start "Monitoring - App+Foto (port %APP_PORT%)" cmd /k ""%NODE%" server\proxy-server.mjs --port=%APP_PORT% --role=app"
 
 REM Beri waktu proxy siap sebelum tunnel menyambung.
 timeout /t 3 /nobreak >nul
 
-REM ---------- 8. Jalankan tunnel di jendela baru ----------
-echo [3/3] Menjalankan Cloudflare Tunnel "%TUNNEL_NAME%" ...
+REM ---------- 7. Jalankan tunnel di jendela baru ----------
+echo [2/2] Menjalankan Cloudflare Tunnel "%TUNNEL_NAME%" ...
 start "Monitoring - Cloudflare Tunnel" cmd /k ""%CFD%" tunnel run %TUNNEL_NAME%"
 
 echo.
 echo ============================================================
-echo   TIGA JENDELA DIBUKA:
-echo     - Monitoring - App  (port %APP_PORT%)  ^<-- komputer LAN
-echo     - Monitoring - Foto (port %TUNNEL_PORT%)  ^<-- Cloudflare Tunnel
+echo   DUA JENDELA DIBUKA:
+echo     - Monitoring - App+Foto (port %APP_PORT%)  ^<-- aplikasi + foto
 echo     - Monitoring - Cloudflare Tunnel
 echo.
-echo   Tutup ketiga jendela untuk menghentikan layanan.
-echo   Uji dari internet (hanya foto):
+echo   Tutup kedua jendela untuk menghentikan layanan.
+echo   Uji dari internet (aplikasi + foto):
 echo     curl.exe -i https://monitoring.woeng.my.id/photos/uji.jpg
 echo   Uji dari LAN (aplikasi):
 echo     http://^<IP-PC-ini^>:%APP_PORT%/

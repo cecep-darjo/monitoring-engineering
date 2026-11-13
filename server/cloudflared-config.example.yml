@@ -26,11 +26,11 @@ credentials-file: C:\Users\<NAMA-ANDA>\.cloudflared\<UUID-TUNNEL>.json
 # protocol: quic
 
 ingress:
-  # Semua request ke subdomain foto diteruskan ke proxy FOTO lokal
-  # (port 8001). Proxy inilah yang melayani /photos/* dan /storage-api/*.
-  # Proxy APLIKASI untuk LAN berjalan terpisah di port 8000.
+  # Semua request ke subdomain diteruskan ke proxy APLIKASI+FOTO lokal
+  # (port 8000). Proxy yang sama melayani aplikasi (bridge ke Cloudflare
+  # Pages), /photos/* (foto dari disk lokal), dan /storage-api/*.
   - hostname: monitoring.woeng.my.id
-    service: http://localhost:8001
+    service: http://localhost:8000
 
   # Wajib ada sebagai aturan terakhir: tolak hostname lain.
   - service: http_status:404
