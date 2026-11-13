@@ -8,7 +8,7 @@
 #   powershell -ExecutionPolicy Bypass -File server\setup-cloudflared-tunnel.ps1
 #
 # Atau dengan parameter:
-#   ... -TunnelName foto-woeng -Hostname foto.woeng.my.id -Port 8000
+#   ... -TunnelName foto-woeng -Hostname monitoring.woeng.my.id -Port 8000
 #
 # Prasyarat:
 #   - cloudflared terpasang (winget install --id Cloudflare.cloudflared)
@@ -17,7 +17,7 @@
 
 param(
   [string]$TunnelName = 'foto-woeng',
-  [string]$Hostname   = 'foto.woeng.my.id',
+  [string]$Hostname   = 'monitoring.woeng.my.id',
   [int]$Port          = 8001
 )
 

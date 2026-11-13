@@ -7,12 +7,12 @@
 # Lalu ganti:
 #   - <UUID-TUNNEL>  -> id dari `cloudflared tunnel create foto-woeng`
 #   - <NAMA-ANDA>    -> nama user Windows Anda
-#   - foto.woeng.my.id -> subdomain yang Anda pakai
+#   - monitoring.woeng.my.id -> subdomain yang Anda pakai
 #
 # Cara membuat tunnel (sekali saja):
 #   cloudflared tunnel login
 #   cloudflared tunnel create foto-woeng
-#   cloudflared tunnel route dns foto-woeng foto.woeng.my.id
+#   cloudflared tunnel route dns foto-woeng monitoring.woeng.my.id
 #
 # Cara menjalankan:
 #   cloudflared tunnel run foto-woeng
@@ -29,7 +29,7 @@ ingress:
   # Semua request ke subdomain foto diteruskan ke proxy FOTO lokal
   # (port 8001). Proxy inilah yang melayani /photos/* dan /storage-api/*.
   # Proxy APLIKASI untuk LAN berjalan terpisah di port 8000.
-  - hostname: foto.woeng.my.id
+  - hostname: monitoring.woeng.my.id
     service: http://localhost:8001
 
   # Wajib ada sebagai aturan terakhir: tolak hostname lain.

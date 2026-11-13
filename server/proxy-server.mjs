@@ -635,6 +635,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Foto: lokal (disk) atau R2. Dicek sebelum bridge upstream agar foto
+  // tidak ikut diteruskan ke aplikasi Pages.
+  if (urlPath.startsWith('/photos/')) {
+    if (STORAGE_DRIVER === 'local') {
+      return serveLocalPhoto(req, res, urlPath);
+    }
+    if (!R2_PUBLIC_URL) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'R2_PUBLIC_URL belum dikonfigurasi di .env.local-proxy' }));
+      return;
+    }
+    return forwardTo(req, res, R2_PUBLIC_URL, req.url.slice('/photos'.length));
+  }
+
   // Route ke backend Supabase untuk path API. Teruskan seluruh req.url
   // (termasuk query string) agar filter & select PostgREST tetap bekerja.
   if (urlPath.startsWith('/storage-api/')) {
@@ -651,18 +665,6 @@ const server = http.createServer((req, res) => {
       return;
     }
     return forwardTo(req, res, STORAGE_API_URL, req.url.slice('/storage-api'.length));
-  }
-
-  if (urlPath.startsWith('/photos/')) {
-    if (STORAGE_DRIVER === 'local') {
-      return serveLocalPhoto(req, res, urlPath);
-    }
-    if (!R2_PUBLIC_URL) {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'R2_PUBLIC_URL belum dikonfigurasi di .env.local-proxy' }));
-      return;
-    }
-    return forwardTo(req, res, R2_PUBLIC_URL, req.url.slice('/photos'.length));
   }
 
   if (

@@ -12,7 +12,7 @@ Browser (monitoreng.pages.dev)
    │
    ├── data & login ──────────────> Supabase (langsung, seperti biasa)
    │
-   └── foto ──> https://foto.woeng.my.id
+  └── foto ──> https://monitoring.woeng.my.id
                   │  (Cloudflare Tunnel, tanpa buka port / tanpa IP publik)
                   └──> server/proxy-server.mjs di komputer Anda
                           ├── /photos/*      -> baca file dari storage-data/
@@ -30,14 +30,14 @@ membuat komputer itu bisa diakses lewat domain tanpa membuka port router.
 | Hal | Nilai |
 |---|---|
 | Domain | `woeng.my.id` (dikelola Cloudflare) |
-| Subdomain foto | `foto.woeng.my.id` |
+| Subdomain foto | `monitoring.woeng.my.id` |
 | Nama tunnel | `foto-woeng` |
 | Layanan lokal | `http://localhost:8000` (proxy) |
 | Env build Pages | `VITE_STORAGE_PUBLIC_URL`, `VITE_STORAGE_API_URL` |
 | Biaya | Gratis (Cloudflare Tunnel + Pages free plan) |
 
 > Boleh juga memakai `woeng.my.id` langsung (tanpa subdomain). Panduan ini
-> memakai `foto.woeng.my.id` supaya domain utama tetap bebas untuk hal lain.
+> memakai `monitoring.woeng.my.id` supaya domain utama tetap bebas untuk hal lain.
 
 ---
 
@@ -56,14 +56,14 @@ Skrip `server/setup-cloudflared-tunnel.ps1` akan:
 1. Mencari `cloudflared` (PATH, Program Files, atau WinGet).
 2. Membuka browser untuk `cloudflared tunnel login` bila `cert.pem` belum ada.
 3. Membuat tunnel `foto-woeng` (atau memakai yang sudah ada).
-4. Menjalankan `cloudflared tunnel route dns foto-woeng foto.woeng.my.id`.
+4. Menjalankan `cloudflared tunnel route dns foto-woeng monitoring.woeng.my.id`.
 5. Menulis `%USERPROFILE%\.cloudflared\config.yml` (config lama dicadangkan).
 
 Parameter opsional:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File server\setup-cloudflared-tunnel.ps1 `
-  -TunnelName foto-woeng -Hostname foto.woeng.my.id -Port 8000
+  -TunnelName foto-woeng -Hostname monitoring.woeng.my.id -Port 8000
 ```
 
 Setelah itu lanjut ke **langkah 7** (konfigurasi proxy). Untuk menjalankan
@@ -155,7 +155,7 @@ C:\Users\Interbat\.cloudflared\6f1c2a3b-1111-2222-3333-444455556666.json
 ## 5. Arahkan subdomain ke tunnel
 
 ```powershell
-cloudflared tunnel route dns foto-woeng foto.woeng.my.id
+cloudflared tunnel route dns foto-woeng monitoring.woeng.my.id
 ```
 
 Perintah ini otomatis membuat record CNAME `foto` → `<UUID>.cfargotunnel.com`
@@ -180,7 +180,7 @@ tunnel: <UUID-TUNNEL>
 credentials-file: C:\Users\<NAMA-ANDA>\.cloudflared\<UUID-TUNNEL>.json
 
 ingress:
-  - hostname: foto.woeng.my.id
+  - hostname: monitoring.woeng.my.id
     service: http://localhost:8000
   - service: http_status:404
 ```
@@ -250,13 +250,13 @@ Di terminal lain:
 
 ```powershell
 # harus 404 (bukan 200) karena STORAGE_ONLY
-curl.exe -i https://foto.woeng.my.id/
+curl.exe -i https://monitoring.woeng.my.id/
 
 # harus 404 juga (file belum ada) — yang penting bukan error tunnel
-curl.exe -i https://foto.woeng.my.id/photos/uji.jpg
+curl.exe -i https://monitoring.woeng.my.id/photos/uji.jpg
 
 # preflight CORS harus 204
-curl.exe -i -X OPTIONS https://foto.woeng.my.id/storage-api/upload `
+curl.exe -i -X OPTIONS https://monitoring.woeng.my.id/storage-api/upload `
   -H "Origin: https://monitoreng.pages.dev" `
   -H "Access-Control-Request-Method: POST"
 ```
@@ -272,8 +272,8 @@ Dashboard Cloudflare → **Workers & Pages** → proyek `monitoreng` →
 |---|---|
 | `VITE_SUPABASE_URL` | `https://qkdosuplybkdfdwuzzxx.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | `<anon/publishable key>` |
-| `VITE_STORAGE_PUBLIC_URL` | `https://foto.woeng.my.id` |
-| `VITE_STORAGE_API_URL` | `https://foto.woeng.my.id/storage-api` |
+| `VITE_STORAGE_PUBLIC_URL` | `https://monitoring.woeng.my.id` |
+| `VITE_STORAGE_API_URL` | `https://monitoring.woeng.my.id/storage-api` |
 
 Jangan set `VITE_STORAGE_DRIVER` — skrip build mengisinya otomatis menjadi
 `local` karena dua variabel `VITE_STORAGE_*` di atas terisi.
@@ -290,7 +290,7 @@ Pastikan juga **Build command** = `npm run build:cloudflare` dan
 ```powershell
 cd C:\Users\Interbat\monitoring-engineering
 git add -A
-git commit -m "Foto: dukung storage lokal via domain foto.woeng.my.id"
+git commit -m "Foto: dukung storage lokal via domain monitoring.woeng.my.id"
 git push
 ```
 
@@ -299,8 +299,8 @@ Cloudflare Pages otomatis build ulang.
 **Cara B — build lokal lalu upload manual**
 
 ```powershell
-$env:VITE_STORAGE_PUBLIC_URL='https://foto.woeng.my.id'
-$env:VITE_STORAGE_API_URL='https://foto.woeng.my.id/storage-api'
+$env:VITE_STORAGE_PUBLIC_URL='https://monitoring.woeng.my.id'
+$env:VITE_STORAGE_API_URL='https://monitoring.woeng.my.id/storage-api'
 npm.cmd run build:cloudflare
 ```
 
@@ -314,7 +314,7 @@ Lalu upload isi `dist-cloudflare/` ke Pages (drag & drop di tab *Deployments*).
 2. Buka DevTools → **Network** → filter `Img`.
 3. URL foto harus berbentuk:
    ```
-   https://foto.woeng.my.id/photos/<roundId>/<parameterId>/<file>.jpg
+  https://monitoring.woeng.my.id/photos/<roundId>/<parameterId>/<file>.jpg
    ```
    **Bukan** `*.supabase.co/storage/v1/object/public/...`.
 4. Upload foto baru → harus muncul tanpa error, dan file benar-benar ada di:
@@ -329,11 +329,11 @@ Cek cepat isi bundle yang ter-deploy:
 $h = (Invoke-WebRequest https://monitoreng.pages.dev/ -UseBasicParsing).Content
 $js = [regex]::Match($h, '/assets/index-[A-Za-z0-9\-_]+\.js').Value
 $c = (Invoke-WebRequest "https://monitoreng.pages.dev$js" -UseBasicParsing).Content
-"foto.woeng.my.id : $([regex]::Matches($c,'foto\.woeng\.my\.id').Count)"
+"monitoring.woeng.my.id : $([regex]::Matches($c,'monitoring\.woeng\.my\.id').Count)"
 "supabase storage : $([regex]::Matches($c,'/storage/v1/object/public').Count)"
 ```
 
-Harus: `foto.woeng.my.id` ≥ 1 dan `supabase storage` = 0.
+Harus: `monitoring.woeng.my.id` ≥ 1 dan `supabase storage` = 0.
 
 ---
 
@@ -390,7 +390,7 @@ node server\migrate-storage-local.mjs --dry-run
 node server\migrate-storage-local.mjs --skip-existing
 ```
 
-Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
+Setelah selesai, foto lama langsung tampil dari `monitoring.woeng.my.id` karena
 `storage_path` di database tidak berubah.
 
 ---
@@ -400,8 +400,8 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 | Gejala | Penyebab & solusi |
 |---|---|
 | `EADDRINUSE: address already in use 0.0.0.0:8000` | Proxy sudah berjalan di jendela lain. Jalankan `npm run stop:proxy` (atau `server\stop-proxy.bat`), lalu start lagi. Bisa juga ubah `PORT` di `.env.local-proxy` + `config.yml` tunnel. |
-| `foto.woeng.my.id` → 502/1033 | Tunnel mati atau proxy mati. Jalankan `cloudflared tunnel run foto-woeng` dan `npm run start:proxy`. |
-| `foto.woeng.my.id` → 404 untuk semua path | `STORAGE_ONLY=true` dan path bukan `/photos/` atau `/storage-api/`. Ini normal untuk `/`. |
+| `monitoring.woeng.my.id` → 502/1033 | Tunnel mati atau proxy mati. Jalankan `cloudflared tunnel run foto-woeng` dan `npm run start:proxy`. |
+| `monitoring.woeng.my.id` → 404 untuk semua path | `STORAGE_ONLY=true` dan path bukan `/photos/` atau `/storage-api/`. Ini normal untuk `/`. |
 | Foto 404 padahal file ada | Cek `STORAGE_DIR` di `.env.local-proxy`; path harus relatif ke folder proyek. |
 | Upload gagal, console: *CORS policy* | `ALLOWED_ORIGIN` tidak memuat `https://monitoreng.pages.dev`. Perbaiki lalu restart proxy. |
 | Upload 401 | Token login kedaluwarsa / `STORAGE_REQUIRE_AUTH=true`. Login ulang di aplikasi. |
@@ -424,7 +424,7 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
   ```powershell
   Compress-Archive -Path storage-data\* -DestinationPath "backup-foto-$(Get-Date -f yyyyMMdd).zip"
   ```
-- Opsional: lindungi `foto.woeng.my.id` dengan **Cloudflare Access** (Zero Trust)
+- Opsional: lindungi `monitoring.woeng.my.id` dengan **Cloudflare Access** (Zero Trust)
   bila foto tidak boleh diakses publik. Catatan: `<img>` dari browser pengguna
   juga harus lolos Access, jadi biasanya cukup andalkan path acak + auth upload.
 - Cloudflare Tunnel gratis, tanpa batas bandwidth yang relevan untuk foto.
@@ -435,7 +435,7 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 
 - [ ] `woeng.my.id` aktif di Cloudflare (nameserver sudah pindah)
 - [ ] `cloudflared tunnel create foto-woeng` selesai, UUID dicatat
-- [ ] `cloudflared tunnel route dns foto-woeng foto.woeng.my.id` selesai
+- [ ] `cloudflared tunnel route dns foto-woeng monitoring.woeng.my.id` selesai
 - [ ] `config.yml` berisi hostname + `service: http://localhost:8000`
 - [ ] `.env.local-proxy`: `STORAGE_DRIVER=local`, `STORAGE_ONLY=true`,
       `ALLOWED_ORIGIN=https://monitoreng.pages.dev`
@@ -484,7 +484,7 @@ untuk komputer lain di LAN.
 ### 17.0 Dua port terpisah (disarankan)
 
 Satu proses proxy dipakai untuk **aplikasi**, satu lagi **khusus foto** untuk
-tunnel. Tujuannya agar domain publik `foto.woeng.my.id` tidak ikut membuka
+tunnel. Tujuannya agar domain publik `monitoring.woeng.my.id` tidak ikut membuka
 aplikasi.
 
 | Peran | Port | Perintah | Melayani |
@@ -503,7 +503,7 @@ Di `%USERPROFILE%\.cloudflared\config.yml`, layanan harus menunjuk port foto:
 
 ```yaml
 ingress:
-  - hostname: foto.woeng.my.id
+  - hostname: monitoring.woeng.my.id
     service: http://localhost:8001
   - service: http_status:404
 ```
@@ -526,8 +526,8 @@ Hasil:
 
 ```
 http://<IP-PC>:8000/            -> aplikasi lengkap (untuk LAN)
-https://foto.woeng.my.id/       -> 404 (hanya foto)
-https://foto.woeng.my.id/photos/... -> foto ✅
+https://monitoring.woeng.my.id/       -> 404 (hanya foto)
+https://monitoring.woeng.my.id/photos/... -> foto ✅
 ```
 
 ### 17.1 Aktifkan
@@ -536,7 +536,7 @@ Di `.env.local-proxy`:
 
 ```ini
 APP_UPSTREAM_URL=https://monitoreng.pages.dev
-BRIDGE_REWRITE=https://qkdosuplybkdfdwuzzxx.supabase.co,https://foto.woeng.my.id
+BRIDGE_REWRITE=https://qkdosuplybkdfdwuzzxx.supabase.co,https://monitoring.woeng.my.id
 STORAGE_ONLY=true
 ```
 
@@ -553,7 +553,7 @@ Log instance aplikasi harus menampilkan:
 Proxy listen: http://0.0.0.0:8000
 Role (CLI)  : app
 Mode        : BRIDGE -> https://monitoreng.pages.dev
-Rewrite URL : https://qkdosuplybkdfdwuzzxx.supabase.co, https://foto.woeng.my.id
+Rewrite URL : https://qkdosuplybkdfdwuzzxx.supabase.co, https://monitoring.woeng.my.id
 ```
 
 Log instance foto:
@@ -572,7 +572,7 @@ Bundle JavaScript dari Pages berisi **URL absolut**:
 
 ```js
 "https://qkdosuplybkdfdwuzzxx.supabase.co"   // Supabase
-"https://foto.woeng.my.id/storage-api"       // storage
+"https://monitoring.woeng.my.id/storage-api"       // storage
 ```
 
 Tanpa penulisan ulang, browser klien akan menghubungi alamat itu langsung
@@ -613,7 +613,7 @@ curl.exe -I http://localhost:8000/photos/<path>/<file>.jpg
 ### 17.5 Catatan tunnel
 
 `STORAGE_ONLY=true` hanya berlaku untuk instance tanpa `--role=app`. Karena
-instance tunnel dijalankan dengan `--role=foto`, `https://foto.woeng.my.id/`
+instance tunnel dijalankan dengan `--role=foto`, `https://monitoring.woeng.my.id/`
 tetap 404 dan hanya melayani `/photos/*` + `/storage-api/*`. Instance aplikasi
 (`--role=app`, port 8000) hanya bisa diakses dari LAN, tidak lewat tunnel.
 

@@ -160,7 +160,7 @@ echo     - Monitoring - Cloudflare Tunnel
 echo.
 echo   Tutup ketiga jendela untuk menghentikan layanan.
 echo   Uji dari internet (hanya foto):
-echo     curl.exe -i https://foto.woeng.my.id/photos/uji.jpg
+echo     curl.exe -i https://monitoring.woeng.my.id/photos/uji.jpg
 echo   Uji dari LAN (aplikasi):
 echo     http://^<IP-PC-ini^>:%APP_PORT%/
 echo ============================================================
