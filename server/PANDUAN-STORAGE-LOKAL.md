@@ -423,7 +423,7 @@ Aplikasi ini punya **dua target build** yang harus dipisah. Jangan memakai
 | Target | Perintah | Output | Storage |
 |---|---|---|---|
 | Proxy lokal (LAN) | `npm run build:proxy` | `dist/` | disk lokal |
-| Cloudflare Pages | `npm run build:cloudflare` | `dist-cloudflare/` | Supabase Storage |
+| Cloudflare Pages | `npm run build:cloudflare` | `dist-cloudflare/` | Supabase Storage **atau** disk lokal lewat domain/tunnel |
 
 ### Langkah
 
@@ -433,8 +433,13 @@ Aplikasi ini punya **dua target build** yang harus dipisah. Jangan memakai
 npm.cmd run build:cloudflare
 ```
 
-Skrip ini memaksa `VITE_USE_LOCAL_PROXY=false` dan
-`VITE_STORAGE_DRIVER=supabase`, lalu menulis ke `dist-cloudflare/`.
+Skrip ini memaksa `VITE_USE_LOCAL_PROXY=false`, lalu memilih driver storage:
+
+- `VITE_STORAGE_DRIVER=local` bila `VITE_STORAGE_PUBLIC_URL` **dan**
+  `VITE_STORAGE_API_URL` terisi (foto dari server sendiri lewat domain/tunnel).
+- `VITE_STORAGE_DRIVER=supabase` bila keduanya kosong (perilaku lama).
+
+Output tetap `dist-cloudflare/`.
 
 2. Di Cloudflare Pages (Settings -> Build):
 
@@ -450,27 +455,39 @@ VITE_SUPABASE_URL=https://qkdosuplybkdfdwuzzxx.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon/publishable key>
 ```
 
-Jangan set `VITE_STORAGE_DRIVER=local` di Cloudflare.
+Bila ingin foto tetap di folder `storage-data/` komputer sendiri, tambahkan:
+
+```
+VITE_STORAGE_PUBLIC_URL=https://foto.woeng.my.id
+VITE_STORAGE_API_URL=https://foto.woeng.my.id/storage-api
+```
+
+Panduan lengkap (Cloudflare Tunnel + domain):
+**[PANDUAN-DOMAIN-FOTO.md](PANDUAN-DOMAIN-FOTO.md)**
+
+Jangan set `VITE_STORAGE_DRIVER` secara manual di Cloudflare — biarkan skrip
+build yang menentukan.
 
 ### Pengaman otomatis
 
 `src/lib/storage.ts` mengabaikan driver `local` bila aplikasi tidak berjalan
-dalam mode local-proxy. Jadi kalau variabel itu tidak sengaja ikut ter-set,
-aplikasi Cloudflare tetap memakai Supabase Storage dan foto tetap tampil.
+dalam mode local-proxy **dan** `VITE_STORAGE_PUBLIC_URL` / `VITE_STORAGE_API_URL`
+kosong. Jadi kalau variabel itu tidak sengaja ikut ter-set, aplikasi Cloudflare
+tetap memakai Supabase Storage dan foto tetap tampil.
 
 ### Verifikasi setelah deploy
 
 Buka situs Cloudflare, lalu DevTools -> Network -> buka History:
 
-- Request gambar harus menuju `*.supabase.co/storage/v1/object/public/...`
-- Tidak boleh ada request ke `/photos/...` di domain Cloudflare
+- Mode Supabase: request gambar menuju `*.supabase.co/storage/v1/object/public/...`
+- Mode lokal: request gambar menuju `https://<domain-foto>/photos/...`
+- Tidak boleh ada request ke `/photos/...` di domain Cloudflare Pages
 
 ### Penting soal data
 
-Cloudflare memakai Supabase Storage, sedangkan proxy lokal memakai
-`storage-data/`. Foto yang diupload lewat Cloudflare **tidak** otomatis muncul
-di proxy lokal, dan sebaliknya. Selama bucket Supabase masih aktif, keduanya
-berjalan sendiri-sendiri tanpa saling merusak.
+Pada mode Supabase, foto tersimpan di bucket Supabase. Pada mode lokal, foto
+tersimpan di `storage-data/`. Keduanya tidak saling sinkron otomatis — pilih
+satu mode dan salin foto lama dengan `npm run migrate:local` bila berpindah.
 
 ---
 

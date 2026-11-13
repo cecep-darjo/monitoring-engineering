@@ -64,6 +64,35 @@ const STORAGE_DIR = process.env.STORAGE_DIR
 const STORAGE_MAX_BYTES = parseInt(process.env.STORAGE_MAX_BYTES || '5242880', 10); // 5 MB default
 const STORAGE_REQUIRE_AUTH = (process.env.STORAGE_REQUIRE_AUTH || 'true').trim().toLowerCase() !== 'false';
 
+// Origin yang diizinkan mengakses proxy dari browser (CORS).
+//   '*'  -> semua origin (default, cocok untuk uji coba)
+//   'https://monitoreng.pages.dev' -> hanya aplikasi produksi
+// Bisa berisi beberapa origin dipisah koma.
+const ALLOWED_ORIGIN = (process.env.ALLOWED_ORIGIN || '*').trim();
+const ALLOWED_ORIGIN_LIST = ALLOWED_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean);
+
+// Bila true, proxy HANYA melayani /photos/* dan /storage-api/*.
+// Pakai ini saat proxy diekspos ke internet (mis. Cloudflare Tunnel) hanya
+// untuk foto, supaya file statis aplikasi dan proxy API Supabase tidak ikut
+// terbuka. Default false (perilaku lama: semua path dilayani).
+const STORAGE_ONLY = (process.env.STORAGE_ONLY || 'false').trim().toLowerCase() === 'true';
+
+function corsOriginFor(req) {
+  const origin = req.headers.origin;
+  if (!origin) return null;
+  if (ALLOWED_ORIGIN_LIST.includes('*')) return origin;
+  return ALLOWED_ORIGIN_LIST.includes(origin) ? origin : null;
+}
+
+function applyCors(req, res) {
+  const allowed = corsOriginFor(req);
+  if (!allowed) return;
+  res.setHeader('Access-Control-Allow-Origin', allowed);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range');
+}
+
 if (!SUPABASE_URL) {
   console.error('[proxy] ERROR: Environment variable SUPABASE_URL wajib diisi.');
   console.error('[proxy] Contoh (PowerShell):');
@@ -385,15 +414,29 @@ const server = http.createServer((req, res) => {
   const urlPath = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
   req.path = urlPath;
 
+  // Pasang header CORS untuk semua respons (termasuk respons non-preflight),
+  // supaya aplikasi statis di origin lain (mis. Cloudflare Pages) bisa
+  // membaca respons upload/hapus dan memuat foto.
+  applyCors(req, res);
+
   // Jawab langsung preflight CORS (untuk skenario dev lintas-origin).
   if (req.method === 'OPTIONS') {
+    const allowed = corsOriginFor(req);
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
+      'Access-Control-Allow-Origin': allowed || req.headers.origin || '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || '*',
       'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Max-Age': '86400',
     });
     res.end();
+    return;
+  }
+
+  // Mode khusus foto: tolak semua path selain /photos/* dan /storage-api/*.
+  if (STORAGE_ONLY && !urlPath.startsWith('/photos/') && !urlPath.startsWith('/storage-api/')) {
+    res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Not found' }));
     return;
   }
 
@@ -448,6 +491,8 @@ server.listen(PORT, HOST, () => {
   console.log(`  Supabase    : ${SUPABASE_URL}`);
   console.log(`  Storage     : ${STORAGE_DRIVER}${STORAGE_DRIVER === 'local' ? ` (${STORAGE_DIR})` : ''}`);
   console.log(`  Proxy listen: http://${HOST}:${PORT}`);
+  if (STORAGE_ONLY) console.log('  Mode        : STORAGE_ONLY (hanya /photos/* dan /storage-api/*)');
+  if (ALLOWED_ORIGIN !== '*') console.log(`  CORS origin : ${ALLOWED_ORIGIN}`);
   console.log('----------------------------------------------------------');
   console.log('  Dari komputer internet-an di jaringan yang sama, buka:');
   console.log('    http://<IP-komputer-ini>:PORT/');

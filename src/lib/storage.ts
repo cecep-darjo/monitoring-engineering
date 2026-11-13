@@ -33,11 +33,14 @@ const STORAGE_PUBLIC_URL = ((import.meta.env.VITE_STORAGE_PUBLIC_URL as string |
 
 export type StorageDriver = 'supabase' | 'r2' | 'local';
 
-// Driver 'local' hanya masuk akal bila aplikasi disajikan oleh proxy lokal
-// (server/proxy-server.mjs), karena hanya proxy itu yang menyediakan
-// /storage-api dan /photos. Pada deploy statis (mis. Cloudflare Pages) driver
-// ini akan menghasilkan URL /photos/... yang 404, jadi kita jatuh ke Supabase.
-const localDriverAllowed = useLocalProxy;
+// Driver 'local' bisa dipakai dalam dua skenario:
+//   1. Aplikasi disajikan oleh proxy lokal (server/proxy-server.mjs) -> useLocalProxy.
+//   2. Aplikasi statis (mis. Cloudflare Pages) yang menunjuk ke server proxy
+//      publik lewat VITE_STORAGE_PUBLIC_URL (baca foto) + VITE_STORAGE_API_URL
+//      (upload/hapus). Tanpa salah satu URL itu, driver 'local' akan
+//      menghasilkan URL /photos/... yang 404, jadi kita jatuh ke Supabase.
+const localDriverAllowed =
+  useLocalProxy || Boolean(STORAGE_PUBLIC_URL) || Boolean(STORAGE_API_URL);
 
 export const storageDriver: StorageDriver =
   rawDriver === 'r2'
@@ -50,9 +53,9 @@ export const storageDriver: StorageDriver =
 
 if (rawDriver === 'local' && !localDriverAllowed) {
   console.warn(
-    '[storage] VITE_STORAGE_DRIVER=local diabaikan karena aplikasi tidak berjalan ' +
-      'dalam mode local-proxy. Memakai Supabase Storage. ' +
-      'Untuk deploy statis (Cloudflare Pages) set VITE_STORAGE_DRIVER=supabase.',
+    '[storage] VITE_STORAGE_DRIVER=local diabaikan karena VITE_STORAGE_PUBLIC_URL / ' +
+      'VITE_STORAGE_API_URL belum diisi dan aplikasi tidak berjalan dalam mode ' +
+      'local-proxy. Memakai Supabase Storage.',
   );
 }
 
@@ -62,7 +65,7 @@ function apiBase(): string {
 }
 
 function storageApiConfigured(): boolean {
-  return storageDriver === 'local' ? true : useLocalProxy || Boolean(STORAGE_API_URL);
+  return useLocalProxy || Boolean(STORAGE_API_URL);
 }
 
 /** URL publik untuk sebuah object path (sama untuk foto monitoring & titipan). */

@@ -57,6 +57,19 @@ All photo upload/delete/URL access goes through `src/lib/storage.ts`, so the bac
 
 `build:cloudflare` runs `node server/build-cloudflare.mjs` (cross-platform, works on Cloudflare's Linux build image). The old PowerShell version is still available as `npm run build:cloudflare:ps1` for Windows only — do NOT use it as the Cloudflare Pages build command (fails with `sh: powershell: not found`).
 
+### Cloudflare Pages + foto di folder lokal server sendiri
+
+Cloudflare Pages is static (no disk). To keep photos in `storage-data/` on your own machine, expose `server/proxy-server.mjs` publicly (e.g. Cloudflare Tunnel) and set at build time:
+
+```
+VITE_STORAGE_PUBLIC_URL=https://<public-proxy-host>          # baca foto  -> /photos/*
+VITE_STORAGE_API_URL=https://<public-proxy-host>/storage-api # upload/hapus
+```
+
+When both are set, `build:cloudflare` automatically uses `VITE_STORAGE_DRIVER=local`; otherwise it falls back to `supabase`. The proxy must allow the Pages origin via `ALLOWED_ORIGIN` in `.env.local-proxy` (default `*`), and should set `STORAGE_ONLY=true` so only `/photos/*` + `/storage-api/*` are exposed publicly.
+
+Full step-by-step guide (Cloudflare Tunnel + custom domain `woeng.my.id`): `server/PANDUAN-DOMAIN-FOTO.md`.
+
 ## Useful commands
 
 - `npm run dev` — Vite development server
