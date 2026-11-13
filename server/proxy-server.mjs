@@ -21,6 +21,36 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ---------------------------------------------------------------------------
+// Argumen CLI (menimpa nilai dari .env.local-proxy).
+// Berguna untuk menjalankan DUA instance dari satu file konfigurasi:
+//   node server/proxy-server.mjs --port=8000 --role=app    (aplikasi untuk LAN)
+//   node server/proxy-server.mjs --port=8001 --role=foto   (khusus tunnel)
+//
+// Opsi:
+//   --port=<n>          port yang didengarkan
+//   --role=app          mode bridge aplikasi (APP_UPSTREAM_URL dipakai)
+//   --role=foto         mode foto saja (hanya /photos/* dan /storage-api/*)
+//   --role=static       menyajikan folder dist/ lokal
+//   --upstream=<url>    paksa URL upstream aplikasi
+//   --no-upstream       matikan mode bridge walau APP_UPSTREAM_URL terisi
+// ---------------------------------------------------------------------------
+const CLI = { port: null, role: null, upstream: undefined };
+
+for (const arg of process.argv.slice(2)) {
+  if (arg.startsWith('--port=')) {
+    const n = parseInt(arg.slice('--port='.length), 10);
+    if (Number.isFinite(n) && n > 0) CLI.port = n;
+  } else if (arg.startsWith('--role=')) {
+    const r = arg.slice('--role='.length).trim().toLowerCase();
+    if (['app', 'foto', 'static'].includes(r)) CLI.role = r;
+  } else if (arg.startsWith('--upstream=')) {
+    CLI.upstream = arg.slice('--upstream='.length).trim();
+  } else if (arg === '--no-upstream') {
+    CLI.upstream = '';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AUTO-LOAD konfigurasi dari .env.local-proxy (jika ada) di root project.
 // Memudahkan menjalankan proxy tanpa set env manual. Env manual tetap menang.
 // ---------------------------------------------------------------------------
@@ -37,6 +67,27 @@ if (fs.existsSync(envFile)) {
     const v = line.slice(eq + 1).trim();
     if (k && !(k in process.env)) process.env[k] = v;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Terapkan argumen CLI ke process.env sebelum konfigurasi dibaca.
+// ---------------------------------------------------------------------------
+if (CLI.port !== null) process.env.PORT = String(CLI.port);
+if (CLI.upstream !== undefined) process.env.APP_UPSTREAM_URL = CLI.upstream;
+if (CLI.role === 'app') {
+  process.env.STORAGE_ONLY = 'false';
+  if (CLI.upstream === undefined) {
+    // Pastikan mode bridge aktif; pakai default Pages bila belum diisi.
+    if (!(process.env.APP_UPSTREAM_URL || '').trim()) {
+      process.env.APP_UPSTREAM_URL = 'https://monitoreng.pages.dev';
+    }
+  }
+} else if (CLI.role === 'foto') {
+  process.env.STORAGE_ONLY = 'true';
+  process.env.APP_UPSTREAM_URL = '';
+} else if (CLI.role === 'static') {
+  process.env.STORAGE_ONLY = 'false';
+  process.env.APP_UPSTREAM_URL = '';
 }
 
 // ---------------------------------------------------------------------------
@@ -642,6 +693,7 @@ server.listen(PORT, HOST, () => {
   console.log(`  Supabase    : ${SUPABASE_URL}`);
   console.log(`  Storage     : ${STORAGE_DRIVER}${STORAGE_DRIVER === 'local' ? ` (${STORAGE_DIR})` : ''}`);
   console.log(`  Proxy listen: http://${HOST}:${PORT}`);
+  if (CLI.role) console.log(`  Role (CLI)  : ${CLI.role}`);
   if (APP_UPSTREAM_URL) {
     console.log(`  Mode        : BRIDGE -> ${APP_UPSTREAM_URL}`);
     console.log('                (aplikasi diteruskan ke upstream, foto dari disk lokal)');

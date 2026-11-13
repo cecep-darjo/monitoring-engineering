@@ -18,7 +18,7 @@
 param(
   [string]$TunnelName = 'foto-woeng',
   [string]$Hostname   = 'foto.woeng.my.id',
-  [int]$Port          = 8000
+  [int]$Port          = 8001
 )
 
 # CATATAN: JANGAN memakai $ErrorActionPreference = 'Stop' di skrip ini.

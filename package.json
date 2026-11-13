@@ -13,6 +13,8 @@
     "build:cloudflare": "node server/build-cloudflare.mjs",
     "build:cloudflare:ps1": "powershell -ExecutionPolicy Bypass -File server/build-cloudflare.ps1",
     "start:proxy": "node server/proxy-server.mjs",
+    "start:app": "node server/proxy-server.mjs --port=8000 --role=app",
+    "start:foto-proxy": "node server/proxy-server.mjs --port=8001 --role=foto",
     "stop:proxy": "server\\stop-proxy.bat",
     "start:foto": "server\\start-foto-tunnel.bat",
     "setup:tunnel": "powershell -ExecutionPolicy Bypass -File server/setup-cloudflared-tunnel.ps1",

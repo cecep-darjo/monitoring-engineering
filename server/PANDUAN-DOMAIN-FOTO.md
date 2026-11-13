@@ -455,8 +455,8 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 | Berkas | Fungsi |
 |---|---|
 | `setup-cloudflared-tunnel.ps1` | Setup otomatis: login, buat tunnel, route DNS, tulis `config.yml`. Jalankan sekali. |
-| `start-foto-tunnel.bat` | Menyalakan proxy + tunnel sekaligus (double-click). |
-| `stop-proxy.bat` | Menghentikan proxy yang masih memakai port (mengatasi `EADDRINUSE`). |
+| `start-foto-tunnel.bat` | Menyalakan app(8000) + foto(8001) + tunnel sekaligus (double-click). |
+| `stop-proxy.bat` | Menghentikan proxy di `APP_PORT` dan `TUNNEL_PORT` (atasi `EADDRINUSE`). |
 | `cloudflared-config.example.yml` | Contoh `config.yml` bila ingin setup manual. |
 | `proxy-server.mjs` | Server yang melayani `/photos/*` dan `/storage-api/*`. |
 | `migrate-storage-local.mjs` | Menyalin foto lama dari Supabase Storage ke `storage-data/`. |
@@ -465,11 +465,13 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 Perintah npm terkait:
 
 ```powershell
-npm.cmd run setup:tunnel   # setup tunnel sekali jalan
-npm.cmd run start:foto     # proxy + tunnel
-npm.cmd run start:proxy    # proxy saja (LAN)
-npm.cmd run stop:proxy     # hentikan proxy (atasi EADDRINUSE)
-npm.cmd run migrate:local  # salin foto lama
+npm.cmd run setup:tunnel      # setup tunnel sekali jalan
+npm.cmd run start:foto        # app(8000) + foto(8001) + tunnel
+npm.cmd run start:app         # proxy aplikasi saja (8000, bridge)
+npm.cmd run start:foto-proxy  # proxy foto saja (8001)
+npm.cmd run start:proxy       # satu instance sesuai .env (default 8000)
+npm.cmd run stop:proxy        # hentikan proxy 8000 & 8001
+npm.cmd run migrate:local     # salin foto lama
 ```
 
 ---
@@ -477,13 +479,55 @@ npm.cmd run migrate:local  # salin foto lama
 ## 17. Mode BRIDGE: buka aplikasi lewat PC lokal
 
 Selain menyajikan foto, proxy bisa **menjembatani** aplikasi Cloudflare Pages
-untuk komputer lain di LAN:
+untuk komputer lain di LAN.
+
+### 17.0 Dua port terpisah (disarankan)
+
+Satu proses proxy dipakai untuk **aplikasi**, satu lagi **khusus foto** untuk
+tunnel. Tujuannya agar domain publik `foto.woeng.my.id` tidak ikut membuka
+aplikasi.
+
+| Peran | Port | Perintah | Melayani |
+|---|---|---|---|
+| Aplikasi (LAN) | `APP_PORT` = 8000 | `--role=app` | aplikasi bridge + `/photos/*` |
+| Foto (tunnel) | `TUNNEL_PORT` = 8001 | `--role=foto` | hanya `/photos/*` + `/storage-api/*` |
+
+Di `.env.local-proxy`:
+
+```ini
+APP_PORT=8000
+TUNNEL_PORT=8001
+```
+
+Di `%USERPROFILE%\.cloudflared\config.yml`, layanan harus menunjuk port foto:
+
+```yaml
+ingress:
+  - hostname: foto.woeng.my.id
+    service: http://localhost:8001
+  - service: http_status:404
+```
+
+Jalankan semuanya (3 jendela):
+
+```powershell
+server\start-foto-tunnel.bat
+```
+
+atau manual di tiga terminal:
+
+```powershell
+npm.cmd run start:app         # 8000, mode bridge
+npm.cmd run start:foto-proxy  # 8001, mode foto saja
+cloudflared tunnel run foto-woeng
+```
+
+Hasil:
 
 ```
-Browser (komputer lain, tanpa internet)
-   └── http://<IP-PC>:8000/  ──> PC lokal ──internet──> monitoreng.pages.dev
-                                  ├── /rest/v1, /auth/v1, /storage/v1, /functions/v1 -> Supabase
-                                  └── /photos/* -> storage-data/ (disk lokal)
+http://<IP-PC>:8000/            -> aplikasi lengkap (untuk LAN)
+https://foto.woeng.my.id/       -> 404 (hanya foto)
+https://foto.woeng.my.id/photos/... -> foto ✅
 ```
 
 ### 17.1 Aktifkan
@@ -500,15 +544,24 @@ Lalu restart proxy:
 
 ```powershell
 npm.cmd run stop:proxy
-npm.cmd run start:proxy
+server\start-foto-tunnel.bat
 ```
 
-Log harus menampilkan:
+Log instance aplikasi harus menampilkan:
 
 ```
+Proxy listen: http://0.0.0.0:8000
+Role (CLI)  : app
 Mode        : BRIDGE -> https://monitoreng.pages.dev
-              (aplikasi diteruskan ke upstream, foto dari disk lokal)
 Rewrite URL : https://qkdosuplybkdfdwuzzxx.supabase.co, https://foto.woeng.my.id
+```
+
+Log instance foto:
+
+```
+Proxy listen: http://0.0.0.0:8001
+Role (CLI)  : foto
+Mode        : STORAGE_ONLY (hanya /photos/* dan /storage-api/*)
 ```
 
 Buka `http://<IP-PC>:8000/` dari komputer lain.
@@ -559,10 +612,18 @@ curl.exe -I http://localhost:8000/photos/<path>/<file>.jpg
 
 ### 17.5 Catatan tunnel
 
-Saat `APP_UPSTREAM_URL` diisi, `STORAGE_ONLY` **otomatis diabaikan** agar
-`/` bisa dilayani. Karena itu:
+`STORAGE_ONLY=true` hanya berlaku untuk instance tanpa `--role=app`. Karena
+instance tunnel dijalankan dengan `--role=foto`, `https://foto.woeng.my.id/`
+tetap 404 dan hanya melayani `/photos/*` + `/storage-api/*`. Instance aplikasi
+(`--role=app`, port 8000) hanya bisa diakses dari LAN, tidak lewat tunnel.
 
-- Kalau tunnel `foto.woeng.my.id` aktif, siapa pun bisa membuka
-  `https://foto.woeng.my.id/` dan melihat aplikasi. Bila itu tidak diinginkan,
-  jalankan **dua** proxy terpisah (satu untuk tunnel, satu untuk LAN) atau
-  kembalikan `STORAGE_ONLY=true` dan kosongkan `APP_UPSTREAM_URL`.
+### 17.6 Argumen CLI `proxy-server.mjs`
+
+| Argumen | Efek |
+|---|---|
+| `--port=<n>` | Menimpa `PORT` dari `.env.local-proxy`. |
+| `--role=app` | Mode bridge aplikasi (pakai `APP_UPSTREAM_URL`, `STORAGE_ONLY` dimatikan). |
+| `--role=foto` | Mode foto saja (`STORAGE_ONLY=true`, upstream dikosongkan). |
+| `--role=static` | Menyajikan folder `dist/` lokal. |
+| `--upstream=<url>` | Memaksa URL upstream aplikasi. |
+| `--no-upstream` | Mematikan bridge walau `APP_UPSTREAM_URL` terisi. |
