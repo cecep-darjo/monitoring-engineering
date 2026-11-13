@@ -21,11 +21,32 @@ param(
   [int]$Port          = 8000
 )
 
-$ErrorActionPreference = 'Stop'
+# CATATAN: JANGAN memakai $ErrorActionPreference = 'Stop' di skrip ini.
+# PowerShell 5.1 menganggap tulisan cloudflared ke stderr (mis. peringatan
+# "Your version ... is outdated") sebagai NativeCommandError yang fatal.
+$ErrorActionPreference = 'Continue'
 
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "    [OK] $msg" -ForegroundColor Green }
 function Write-Warn2($msg){ Write-Host "    [!] $msg" -ForegroundColor Yellow }
+
+# Jalankan perintah native dengan aman: tangkap stdout+stderr tanpa melempar
+# NativeCommandError, kembalikan objek berisi Output (string[]) dan ExitCode.
+function Invoke-Native {
+  param(
+    [Parameter(Mandatory = $true)][string]$Exe,
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
+  )
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $out = & $Exe @Arguments 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+  return [pscustomobject]@{ Output = @($out); ExitCode = $code }
+}
 
 # ------- 1. Cari cloudflared -------
 Write-Step 'Mencari cloudflared'
@@ -53,7 +74,8 @@ $certFile = Join-Path $cfDir 'cert.pem'
 if (-not (Test-Path $certFile)) {
   Write-Step 'Login ke Cloudflare (browser akan terbuka)'
   Write-Warn2 'Pilih zone domain Anda, lalu klik Authorize.'
-  & $cfd tunnel login
+  $login = Invoke-Native $cfd tunnel login
+  $login.Output | ForEach-Object { Write-Host "    $_" }
   if (-not (Test-Path $certFile)) {
     Write-Host 'Login gagal: cert.pem tidak terbentuk.' -ForegroundColor Red
     exit 1
@@ -63,22 +85,34 @@ Write-Ok "Sertifikat: $certFile"
 
 # ------- 3. Buat tunnel (bila belum) -------
 Write-Step "Menyiapkan tunnel '$TunnelName'"
-$listJson = & $cfd tunnel list --output json 2>$null
+$list = Invoke-Native $cfd tunnel list --output json
 $tunnelId = $null
-if ($LASTEXITCODE -eq 0 -and $listJson) {
-  try {
-    $tunnels = $listJson | ConvertFrom-Json
-    $existing = $tunnels | Where-Object { $_.name -eq $TunnelName } | Select-Object -First 1
-    if ($existing) { $tunnelId = $existing.id }
-  } catch { }
+if ($list.ExitCode -eq 0 -and $list.Output.Count -gt 0) {
+  # cloudflared bisa menulis peringatan (mis. "Your version ... is outdated")
+  # ke stderr, yang bisa muncul di awal ATAU akhir output. Ambil hanya blok
+  # JSON: dari baris pertama yang diawali '[' sampai baris terakhir yang ']'.
+  $startIdx = -1
+  $endIdx = -1
+  for ($i = 0; $i -lt $list.Output.Count; $i++) {
+    if ($startIdx -lt 0 -and $list.Output[$i] -match '^\s*\[') { $startIdx = $i }
+    if ($list.Output[$i] -match '^\s*\]\s*$') { $endIdx = $i }
+  }
+  if ($startIdx -ge 0 -and $endIdx -ge $startIdx) {
+    $jsonText = ($list.Output[$startIdx..$endIdx]) -join "`n"
+    try {
+      $tunnels = $jsonText | ConvertFrom-Json
+      $existing = $tunnels | Where-Object { $_.name -eq $TunnelName } | Select-Object -First 1
+      if ($existing) { $tunnelId = $existing.id }
+    } catch { }
+  }
 }
 
 if ($tunnelId) {
   Write-Ok "Tunnel sudah ada: $tunnelId"
 } else {
-  $createOut = & $cfd tunnel create $TunnelName 2>&1
-  $createOut | ForEach-Object { Write-Host "    $_" }
-  $match = [regex]::Match(($createOut -join "`n"), '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
+  $create = Invoke-Native $cfd tunnel create $TunnelName
+  $create.Output | ForEach-Object { Write-Host "    $_" }
+  $match = [regex]::Match(($create.Output -join "`n"), '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
   if (-not $match.Success) {
     Write-Host 'Gagal membaca UUID tunnel dari output di atas.' -ForegroundColor Red
     exit 1
@@ -96,9 +130,9 @@ Write-Ok "Kredensial: $credFile"
 
 # ------- 4. Arahkan DNS -------
 Write-Step "Mengarahkan $Hostname ke tunnel"
-$routeOut = & $cfd tunnel route dns $TunnelName $Hostname 2>&1
-$routeOut | ForEach-Object { Write-Host "    $_" }
-if ($LASTEXITCODE -ne 0) {
+$route = Invoke-Native $cfd tunnel route dns $TunnelName $Hostname
+$route.Output | ForEach-Object { Write-Host "    $_" }
+if ($route.ExitCode -ne 0) {
   Write-Warn2 'Perintah route dns gagal. Kemungkinan record DNS sudah ada.'
   Write-Warn2 "Cek dashboard Cloudflare -> DNS: pastikan ada CNAME '$Hostname' (Proxied)."
 } else {

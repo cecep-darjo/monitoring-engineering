@@ -409,6 +409,8 @@ Setelah selesai, foto lama langsung tampil dari `foto.woeng.my.id` karena
 | `cloudflared tunnel route dns` gagal | Nameserver domain belum di Cloudflare (langkah 2), atau subdomain sudah dipakai. |
 | Tunnel putus tiap beberapa jam | Jalankan sebagai service (langkah 11), jangan di terminal manual. |
 | `npm` → `SecurityError` di PowerShell | Pakai `npm.cmd`. |
+| `cloudflared.exe : {"level":"warn",...}` + `NativeCommandError` saat setup | Peringatan versi cloudflared ditulis ke stderr dan PowerShell 5.1 menganggapnya error. Sudah ditangani di `setup-cloudflared-tunnel.ps1` (fungsi `Invoke-Native`). Bila memakai skrip versi lama, perbarui skripnya. |
+| `Your version ... is outdated` | Hanya peringatan. Perbarui dengan `winget upgrade --id Cloudflare.cloudflared` (opsional). |
 
 ---
 

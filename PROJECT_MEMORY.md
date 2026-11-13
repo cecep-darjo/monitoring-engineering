@@ -72,6 +72,10 @@ Full step-by-step guide (Cloudflare Tunnel + custom domain `woeng.my.id`): `serv
 
 Helper files: `server/setup-cloudflared-tunnel.ps1` (`npm run setup:tunnel`, one-time tunnel+DNS+config setup), `server/start-foto-tunnel.bat` (`npm run start:foto`, runs proxy + tunnel), `server/cloudflared-config.example.yml`. Proxy env `STORAGE_ONLY=true` restricts public exposure to `/photos/*` + `/storage-api/*`.
 
+Live setup (2026-11-13): tunnel `foto-woeng` id `100ede30-6795-4de0-a924-7ae6271b3e85`, hostname `foto.woeng.my.id` → `http://localhost:8000`. Verified: root 404, `/photos/*` serves files, CORS preflight 204 for `https://monitoreng.pages.dev`.
+
+PowerShell 5.1 gotcha: never use `$ErrorActionPreference='Stop'` in scripts calling `cloudflared` — its stderr warnings become fatal `NativeCommandError`. Use the `Invoke-Native` helper pattern (capture `2>&1`, check `$LASTEXITCODE`). Also `?.` null-conditional is not supported in PS 5.1.
+
 ## Useful commands
 
 - `npm run dev` — Vite development server
