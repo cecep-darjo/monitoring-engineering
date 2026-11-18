@@ -5,8 +5,8 @@
 #
 # Perbedaan dengan build:proxy:
 #   - VITE_USE_LOCAL_PROXY = false  -> client memakai VITE_SUPABASE_URL
-#   - VITE_STORAGE_DRIVER  = supabase -> foto dibaca dari Supabase Storage
-#     (bukan /photos/... yang hanya ada di proxy lokal)
+#   - Storage = LOKAL SAJA: foto disimpan di folder storage-data/ server proxy
+#     sendiri. Wajib isi VITE_STORAGE_PUBLIC_URL + VITE_STORAGE_API_URL.
 #
 # Hasil: folder `dist-cloudflare/` siap di-upload ke Cloudflare Pages.
 # Sengaja dipisah dari `dist/` supaya build proxy lokal tidak tertimpa.
@@ -18,6 +18,7 @@
 #   Build command : npm run build:cloudflare
 #   Output dir    : dist-cloudflare
 #   Env vars      : VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+#                   + VITE_STORAGE_PUBLIC_URL, VITE_STORAGE_API_URL (wajib)
 # ============================================================
 
 $ErrorActionPreference = 'Stop'
@@ -49,26 +50,32 @@ if (Test-Path $envFile) {
   }
 }
 
-# ------- 2. Paksa mode statis + Supabase Storage -------
+# ------- 2. Paksa mode statis + storage LOKAL -------
 # Nilai ini MENANG atas sisa environment dari sesi build:proxy sebelumnya.
 $env:VITE_USE_LOCAL_PROXY = 'false'
-$env:VITE_STORAGE_DRIVER = 'supabase'
-Remove-Item Env:VITE_STORAGE_API_URL -ErrorAction SilentlyContinue
 Remove-Item Env:VITE_R2_PUBLIC_URL -ErrorAction SilentlyContinue
-Remove-Item Env:VITE_STORAGE_PUBLIC_URL -ErrorAction SilentlyContinue
+Remove-Item Env:VITE_STORAGE_DRIVER -ErrorAction SilentlyContinue
 
-# ------- 3. Validasi konfigurasi Supabase -------
+# ------- 3. Validasi konfigurasi -------
 if (-not $env:VITE_SUPABASE_URL) {
   Write-Error 'VITE_SUPABASE_URL tidak ditemukan. Isi di .env atau environment Cloudflare Pages.'
 }
 if (-not $env:VITE_SUPABASE_ANON_KEY) {
   Write-Error 'VITE_SUPABASE_ANON_KEY tidak ditemukan. Isi di .env atau environment Cloudflare Pages.'
 }
+if (-not $env:VITE_STORAGE_PUBLIC_URL) {
+  Write-Error 'VITE_STORAGE_PUBLIC_URL wajib diisi (mis. https://monitoring.woeng.my.id).'
+}
+if (-not $env:VITE_STORAGE_API_URL) {
+  Write-Error 'VITE_STORAGE_API_URL wajib diisi (mis. https://monitoring.woeng.my.id/storage-api).'
+}
 
 Write-Host ""
 Write-Host "  Mode build            : CLOUDFLARE PAGES (statis)"
 Write-Host "  VITE_USE_LOCAL_PROXY  : false"
-Write-Host "  VITE_STORAGE_DRIVER   : supabase"
+Write-Host "  VITE_STORAGE          : local (folder storage-data/ di server proxy)"
+Write-Host "  VITE_STORAGE_PUBLIC_URL: $($env:VITE_STORAGE_PUBLIC_URL)"
+Write-Host "  VITE_STORAGE_API_URL  : $($env:VITE_STORAGE_API_URL)"
 Write-Host "  VITE_SUPABASE_URL     : $($env:VITE_SUPABASE_URL)"
 Write-Host "  VITE_SUPABASE_ANON_KEY: (terisi, dibakar ke bundle)"
 Write-Host ""

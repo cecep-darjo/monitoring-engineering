@@ -12,7 +12,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const STORAGE_BUCKET = "monitoring-photos";
 const SHIFT_LABELS: Record<number, string> = { 1: "Shift 1 (Pagi)", 2: "Shift 2 (Sore)", 3: "Shift 3 (Malam)" };
 const ROUND_WINDOWS: Record<number, Record<number, { start: number; end: number }>> = {
   1: { 1: { start: 7, end: 11 }, 2: { start: 11, end: 15 } },
@@ -40,7 +39,7 @@ function runAutoTable(doc: any, options: any) {
 }
 
 // Converting bytes to base64 one character at a time (bin += String.fromCharCode(buf[i]))
-// is extremely CPU/memory heavy for larger files (many photos, or the final PDF) and was
+// is extremely CPU/memory heavy for larger files (e.g. the final PDF) and was
 // the cause of edge function resource-limit errors (546) on busy report days. Processing
 // in chunks keeps memory flat and is dramatically faster.
 function bytesToBase64(bytes: Uint8Array): string {
@@ -58,23 +57,6 @@ function time(label: string): () => void {
   const start = performance.now();
   return () => console.log(`[timing] ${label}: ${(performance.now() - start).toFixed(0)}ms`);
 }
-
-// Runs async tasks with a concurrency cap, so many photo downloads overlap instead of
-// running one at a time (which was the main source of the report taking so long).
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
-const MAX_PHOTOS_PER_SECTION = 20; // bounds worst-case CPU/time as photo volume grows
 
 function slotLabel(shift: number, round: number): string {
   const wnd = ROUND_WINDOWS[shift][round];
@@ -106,7 +88,7 @@ async function buildReportPdf(
   targetDate: string
 ): Promise<Uint8Array | null> {
   const totalTimer = time("buildReportPdf total");
-  let stepTimer = time("fetch-rounds-values-photos-parameters");
+  let stepTimer = time("fetch-rounds-values-parameters");
   const { data: rounds } = await supabaseAdmin
     .from("monitoring_rounds")
     .select("*")
@@ -116,16 +98,14 @@ async function buildReportPdf(
   if (!rounds || rounds.length === 0) return null;
 
   const roundIds = rounds.map((r: any) => r.id);
-  const [{ data: values }, { data: photos }, { data: parameters }, { data: schedules }, { data: scheduleParameters }, { data: roundConclusions }] = await Promise.all([
+  const [{ data: values }, { data: parameters }, { data: schedules }, { data: scheduleParameters }, { data: roundConclusions }] = await Promise.all([
     supabaseAdmin.from("monitoring_values").select("*").in("round_id", roundIds),
-    supabaseAdmin.from("monitoring_photos").select("*").in("round_id", roundIds),
     supabaseAdmin.from("parameters").select("*"),
     supabaseAdmin.from("schedules").select("id, machine_id, shift_number, round_number").eq("is_active", true),
     supabaseAdmin.from("schedule_parameters").select("schedule_id, parameter_id, sort_order, depends_on_parameter_id, depends_on_value"),
     supabaseAdmin.from("round_conclusions").select("*").eq("monitoring_date", targetDate),
   ]);
   const valuesArr = values || [];
-  const photosArr = photos || [];
   const paramById = new Map((parameters || []).map((p: any) => [p.id, p]));
   const scheduleBySlot = new Map((schedules || []).map((s: any) => [`${s.machine_id}|${s.shift_number}|${s.round_number}`, s]));
   const scheduleParamsByScheduleId = new Map<string, any[]>();
@@ -353,87 +333,6 @@ async function buildReportPdf(
       columnStyles: { 0: { cellWidth: 40, halign: "center" }, 1: { cellWidth: 50 } },
     });
     cursorY = (doc as any).lastAutoTable.finalY + 5;
-  }
-
-  if (photosArr.length) {
-    doc.addPage(); drawHeader(); cursorY = 27;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(18, 79, 121);
-    doc.text("LAMPIRAN FOTO", m, cursorY);
-    cursorY += 6;
-
-    const roundInfoById = new Map(rounds.map((r: any) => [r.id, r]));
-    const thumbW = 40, thumbH = 30, gap = 4;
-    let x = m, rowMaxH = 0;
-
-    const photosToRender = photosArr.slice(0, MAX_PHOTOS_PER_SECTION);
-    const skippedCount = photosArr.length - photosToRender.length;
-
-    // Download + base64-encode every photo concurrently (bounded) instead of one at a
-    // time — this was the single biggest contributor to the function running long.
-    stepTimer = time(`download-lampiran-photos (${photosToRender.length})`);
-    const dataUrlByPhotoId = new Map<string, string | null>();
-    // Bila R2_PUBLIC_URL diset, foto dibaca dari Cloudflare R2 (bucket publik).
-    // Jika tidak, tetap memakai Supabase Storage seperti sebelumnya.
-    const r2Base = (Deno.env.get("R2_PUBLIC_URL") || "").trim().replace(/\/+$/, "");
-    await mapWithConcurrency(photosToRender, 6, async (photo: any) => {
-      let dataUrl: string | null = null;
-      try {
-        let buf: Uint8Array | null = null;
-        if (r2Base) {
-          const res = await fetch(`${r2Base}/${photo.storage_path}`);
-          if (res.ok) buf = new Uint8Array(await res.arrayBuffer());
-        } else {
-          const { data: fileBlob } = await supabaseAdmin.storage.from(STORAGE_BUCKET).download(photo.storage_path);
-          if (fileBlob) buf = new Uint8Array(await fileBlob.arrayBuffer());
-        }
-        if (buf) {
-          const b64 = bytesToBase64(buf);
-          const ext = (photo.storage_path.split(".").pop() || "jpg").toLowerCase();
-          const mime = ext === "png" ? "image/png" : "image/jpeg";
-          dataUrl = `data:${mime};base64,${b64}`;
-        }
-      } catch { /* skip missing photo */ }
-      dataUrlByPhotoId.set(photo.id, dataUrl);
-    });
-    stepTimer();
-
-    stepTimer = time("draw-lampiran-photos");
-    for (const photo of photosToRender) {
-      const round: any = roundInfoById.get(photo.round_id);
-      const param: any = photo.parameter_id ? paramById.get(photo.parameter_id) : undefined;
-      const dataUrl = dataUrlByPhotoId.get(photo.id) ?? null;
-
-      const caption = [round?.machine_name, round ? `Shift ${round.shift_number} R${round.round_number}` : "", param?.name || ""].filter(Boolean).join(" \u2022 ");
-      const capLines = doc.splitTextToSize(caption, thumbW);
-      const blockH = thumbH + 3 + capLines.length * 2.6 + 4;
-
-      if (x + thumbW > w - m) { x = m; cursorY += rowMaxH; rowMaxH = 0; }
-      if (cursorY + blockH > bottomLimit) { doc.addPage(); drawHeader(); cursorY = 27; x = m; rowMaxH = 0; }
-
-      doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.2);
-      doc.rect(x, cursorY, thumbW, thumbH);
-
-      if (dataUrl) {
-        try { doc.addImage(dataUrl, dataUrl.includes("png") ? "PNG" : "JPEG", x, cursorY, thumbW, thumbH); }
-        catch { /* border already drawn; leave cell empty on failure */ }
-      } else {
-        doc.setFillColor(245, 245, 245);
-        doc.rect(x + 0.3, cursorY + 0.3, thumbW - 0.6, thumbH - 0.6, "F");
-        doc.setFontSize(5.5); doc.setTextColor(150);
-        doc.text("N/A", x + thumbW / 2, cursorY + thumbH / 2, { align: "center" });
-      }
-      doc.setFont("helvetica", "normal"); doc.setFontSize(5.5); doc.setTextColor(100, 116, 139);
-      doc.text(capLines, x, cursorY + thumbH + 3, { maxWidth: thumbW });
-
-      rowMaxH = Math.max(rowMaxH, blockH);
-      x += thumbW + gap;
-    }
-    if (skippedCount > 0) {
-      doc.setFontSize(6.5); doc.setTextColor(150);
-      doc.text(`+${skippedCount} foto lainnya tidak ditampilkan (lihat di aplikasi).`, m, cursorY + rowMaxH + 4);
-    }
-    stepTimer();
   }
 
   stepTimer = time("pdf-output");

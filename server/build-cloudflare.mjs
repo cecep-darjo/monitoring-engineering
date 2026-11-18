@@ -7,11 +7,9 @@
 //
 // Perbedaan dengan build:proxy:
 //   - VITE_USE_LOCAL_PROXY = false  -> client memakai VITE_SUPABASE_URL
-//   - VITE_STORAGE_DRIVER  = supabase (default) atau local
-//       * supabase : foto dibaca dari Supabase Storage
-//       * local    : foto disimpan di folder storage-data/ server proxy sendiri.
-//                    Aktif bila VITE_STORAGE_PUBLIC_URL + VITE_STORAGE_API_URL
-//                    diisi (mis. lewat Cloudflare Tunnel ke server proxy).
+//   - Storage = LOKAL SAJA: foto disimpan di folder storage-data/ server proxy
+//     sendiri. Wajib isi VITE_STORAGE_PUBLIC_URL + VITE_STORAGE_API_URL
+//     (mis. lewat Cloudflare Tunnel ke server proxy).
 //
 // Hasil: folder `dist-cloudflare/` siap di-upload ke Cloudflare Pages.
 //
@@ -22,7 +20,7 @@
 //   Build command : npm run build:cloudflare
 //   Output dir    : dist-cloudflare
 //   Env vars      : VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
-//                   (+ VITE_STORAGE_PUBLIC_URL, VITE_STORAGE_API_URL bila pakai storage lokal)
+//                   + VITE_STORAGE_PUBLIC_URL, VITE_STORAGE_API_URL (wajib)
 // ============================================================
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -64,28 +62,19 @@ if (existsSync(envFile)) {
   }
 }
 
-// ------- 2. Tentukan driver storage -------
-// Mode default: Supabase Storage.
-// Mode "local": foto disimpan di folder storage-data/ pada server proxy sendiri.
-//   Aktif bila VITE_STORAGE_PUBLIC_URL (baca foto) dan VITE_STORAGE_API_URL
-//   (upload/hapus) diisi, mis. lewat Cloudflare Tunnel ke server proxy.
+// ------- 2. Storage: LOKAL SAJA -------
+// Foto selalu disimpan di folder storage-data/ pada server proxy sendiri.
+// Wajib isi VITE_STORAGE_PUBLIC_URL (baca foto) dan VITE_STORAGE_API_URL
+// (upload/hapus), mis. lewat Cloudflare Tunnel ke server proxy.
 process.env.VITE_USE_LOCAL_PROXY = 'false';
 
 const storagePublicUrl = (process.env.VITE_STORAGE_PUBLIC_URL || '').trim().replace(/\/+$/, '');
 const storageApiUrl = (process.env.VITE_STORAGE_API_URL || '').trim().replace(/\/+$/, '');
-const useLocalStorage = Boolean(storagePublicUrl && storageApiUrl);
 
-if (useLocalStorage) {
-  process.env.VITE_STORAGE_DRIVER = 'local';
-  process.env.VITE_STORAGE_PUBLIC_URL = storagePublicUrl;
-  process.env.VITE_STORAGE_API_URL = storageApiUrl;
-  delete process.env.VITE_R2_PUBLIC_URL;
-} else {
-  process.env.VITE_STORAGE_DRIVER = 'supabase';
-  delete process.env.VITE_STORAGE_API_URL;
-  delete process.env.VITE_R2_PUBLIC_URL;
-  delete process.env.VITE_STORAGE_PUBLIC_URL;
-}
+process.env.VITE_STORAGE_PUBLIC_URL = storagePublicUrl;
+process.env.VITE_STORAGE_API_URL = storageApiUrl;
+delete process.env.VITE_R2_PUBLIC_URL;
+delete process.env.VITE_STORAGE_DRIVER;
 
 // ------- 3. Validasi konfigurasi -------
 let missing = false;
@@ -101,15 +90,15 @@ if (!process.env.VITE_SUPABASE_ANON_KEY) {
   );
   missing = true;
 }
-if (useLocalStorage && !/^https?:\/\//i.test(storagePublicUrl)) {
+if (!/^https?:\/\//i.test(storagePublicUrl)) {
   console.error(
-    'ERROR: VITE_STORAGE_PUBLIC_URL harus berupa URL absolut, mis. https://foto.example.com'
+    'ERROR: VITE_STORAGE_PUBLIC_URL wajib diisi dan berupa URL absolut, mis. https://foto.example.com'
   );
   missing = true;
 }
-if (useLocalStorage && !/^https?:\/\//i.test(storageApiUrl)) {
+if (!/^https?:\/\//i.test(storageApiUrl)) {
   console.error(
-    'ERROR: VITE_STORAGE_API_URL harus berupa URL absolut, mis. https://foto.example.com/storage-api'
+    'ERROR: VITE_STORAGE_API_URL wajib diisi dan berupa URL absolut, mis. https://foto.example.com/storage-api'
   );
   missing = true;
 }
@@ -118,11 +107,9 @@ if (missing) process.exit(1);
 log('');
 log('  Mode build            : CLOUDFLARE PAGES (statis)');
 log('  VITE_USE_LOCAL_PROXY  : false');
-log(`  VITE_STORAGE_DRIVER   : ${process.env.VITE_STORAGE_DRIVER}`);
-if (useLocalStorage) {
-  log(`  VITE_STORAGE_PUBLIC_URL: ${storagePublicUrl}`);
-  log(`  VITE_STORAGE_API_URL   : ${storageApiUrl}`);
-}
+log('  VITE_STORAGE           : local (folder storage-data/ di server proxy)');
+log(`  VITE_STORAGE_PUBLIC_URL: ${storagePublicUrl}`);
+log(`  VITE_STORAGE_API_URL   : ${storageApiUrl}`);
 log(`  VITE_SUPABASE_URL     : ${process.env.VITE_SUPABASE_URL}`);
 log('  VITE_SUPABASE_ANON_KEY: (terisi, dibakar ke bundle)');
 log('');

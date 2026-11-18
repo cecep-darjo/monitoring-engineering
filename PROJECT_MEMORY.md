@@ -33,27 +33,26 @@ Important business constraints recorded in migrations and `README_PERUBAHAN.txt`
 
 `README_PROXY.md` documents offline-LAN-client mode. `npm run build:proxy` runs `server/build-local-proxy.ps1`; the Node server `server/proxy-server.mjs` serves `dist/` and forwards `/rest/v1`, `/auth/v1`, `/storage/v1`, and `/functions/v1` to Supabase. `server/start-monitoring.bat` starts the proxy; default port is 8000. `.env.local-proxy` configures the upstream and should not be committed. `BACA-DULU.txt` is the quick start guide.
 
-## Storage backend (Supabase Storage or Cloudflare R2)
+## Storage backend (LOKAL SAJA)
 
-All photo upload/delete/URL access goes through `src/lib/storage.ts`, so the backend can be switched without touching pages.
+All photo upload/delete/URL access goes through `src/lib/storage.ts`. Sejak 2026-11-18 storage HANYA lokal: file disimpan di disk server proxy (`storage-data/`), disajikan lewat `/photos/*`, dikelola lewat `/storage-api/*`. Supabase Storage dan R2 sudah tidak dipakai dari sisi aplikasi.
 
-- `VITE_STORAGE_DRIVER=supabase` (default) uses the `monitoring-photos` Supabase bucket.
-- `VITE_STORAGE_DRIVER=local` stores files on disk of the machine running the proxy, served at `/photos/*`. No extra database is needed: photo metadata stays in Supabase. Configure `STORAGE_DRIVER=local`, `STORAGE_DIR` (default `storage-data`), `STORAGE_MAX_BYTES`, `STORAGE_REQUIRE_AUTH` in `.env.local-proxy`. Guide: `server/PANDUAN-STORAGE-LOKAL.md`; copy old photos with `npm run migrate:local`.
-- The `local` driver is only honored when `VITE_USE_LOCAL_PROXY=true`. On any static deploy (Cloudflare Pages) it silently falls back to Supabase Storage, so a stray `VITE_STORAGE_DRIVER=local` cannot break the hosted app.
-- `VITE_STORAGE_DRIVER=r2` uses Cloudflare R2: `VITE_R2_PUBLIC_URL` for public reads and `VITE_STORAGE_API_URL` for the Worker that issues presigned PUT URLs and deletes objects.
-- The Worker lives in `cloudflare/worker/` (`/upload`, `/delete`), verifies the Supabase access token, and signs R2 requests with `aws4fetch`. Migration guide: `cloudflare/README.md`.
-- In local-proxy mode the client always uses origin-relative paths (`/storage-api/*`, `/photos/*`); `server/proxy-server.mjs` forwards them to `STORAGE_API_URL` and `R2_PUBLIC_URL` from `.env.local-proxy`.
+- `src/lib/storage.ts` selalu memakai endpoint lokal. `VITE_STORAGE_DRIVER` dan `VITE_R2_PUBLIC_URL` sudah tidak dibaca lagi.
+- Env build statis: `VITE_STORAGE_PUBLIC_URL` (baca foto) + `VITE_STORAGE_API_URL` (upload/hapus) WAJIB diisi; `build:cloudflare` gagal bila kosong.
+- Mode local-proxy (LAN): URL dibuat relatif ke `window.location.origin`, jadi kedua env boleh kosong.
 - Local storage endpoints in `server/proxy-server.mjs`: `POST /storage-api/upload?path=...` (raw body), `POST /storage-api/delete` (JSON paths), `GET /photos/<path>`. Upload/delete verify the Supabase bearer token against `/auth/v1/user` unless `STORAGE_REQUIRE_AUTH=false`.
-- The `send-shift-report` edge function reads photos from `R2_PUBLIC_URL` when that secret is set, otherwise from Supabase Storage.
+- The `send-shift-report` edge function TIDAK lagi melampirkan foto di PDF email (blok lampiran foto dihapus; query `monitoring_photos` dihapus). Photo metadata tetap tersimpan di tabel Supabase (`monitoring_photos` / `work_request_photos`).
+- PDF report di aplikasi (frontend `src/lib/pdfReport.ts`) tetap memuat foto dari storage lokal via `photoUrl()`.
+- Catatan: `cloudflare/README.md` dan `cloudflare/PANDUAN-MIGRASI.md` (jalur R2) serta `server/PANDUAN-STORAGE-LOKAL.md` sebagian sudah usang untuk sisi frontend.
 
 ## Two build targets (do not mix)
 
 | Target | Command | Output | Storage |
 |---|---|---|---|
-| Local proxy (LAN/offline) | `npm run build:proxy` | `dist/` | `local` disk via `/photos/*` |
-| Cloudflare Pages (static) | `npm run build:cloudflare` | `dist-cloudflare/` | Supabase Storage |
+| Local proxy (LAN/offline) | `npm run build:proxy` | `dist/` | `local` disk via `/photos/*` (origin-relative) |
+| Cloudflare Pages (static) | `npm run build:cloudflare` | `dist-cloudflare/` | `local` disk via tunnel (`VITE_STORAGE_PUBLIC_URL`/`VITE_STORAGE_API_URL`) |
 
-`build:cloudflare` forces `VITE_USE_LOCAL_PROXY=false` and `VITE_STORAGE_DRIVER=supabase`, and writes to a separate folder so it never overwrites the proxy build. On Cloudflare Pages set build command `npm run build:cloudflare`, output dir `dist-cloudflare`, and env vars `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`.
+`build:cloudflare` forces `VITE_USE_LOCAL_PROXY=false`, REQUIRES `VITE_STORAGE_PUBLIC_URL` + `VITE_STORAGE_API_URL` (fails if empty), and writes to a separate folder so it never overwrites the proxy build. On Cloudflare Pages set build command `npm run build:cloudflare`, output dir `dist-cloudflare`, and env vars `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` + the two storage URLs.
 
 `build:cloudflare` runs `node server/build-cloudflare.mjs` (cross-platform, works on Cloudflare's Linux build image). The old PowerShell version is still available as `npm run build:cloudflare:ps1` for Windows only — do NOT use it as the Cloudflare Pages build command (fails with `sh: powershell: not found`).
 
@@ -66,7 +65,7 @@ VITE_STORAGE_PUBLIC_URL=https://<public-proxy-host>          # baca foto  -> /ph
 VITE_STORAGE_API_URL=https://<public-proxy-host>/storage-api # upload/hapus
 ```
 
-When both are set, `build:cloudflare` automatically uses `VITE_STORAGE_DRIVER=local`; otherwise it falls back to `supabase`. The proxy must allow the Pages origin via `ALLOWED_ORIGIN` in `.env.local-proxy` (default `*`), and should set `STORAGE_ONLY=true` so only `/photos/*` + `/storage-api/*` are exposed publicly.
+Kedua env WAJIB diisi. The proxy must allow the Pages origin via `ALLOWED_ORIGIN` in `.env.local-proxy` (default `*`).
 
 Full step-by-step guide (Cloudflare Tunnel + custom domain `woeng.my.id`): `server/PANDUAN-DOMAIN-FOTO.md`.
 
